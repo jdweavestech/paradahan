@@ -1,14 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
-import { notFound } from "next/navigation";
+import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import {
   MapPin,
   Clock,
-  Star,
   Heart,
-  Share2,
   Flag,
   Car,
   ShieldCheck,
@@ -16,13 +15,27 @@ import {
   Zap,
   Sun,
   Layers,
+  Loader2,
 } from "lucide-react";
 import Container from "@/components/shared/Container";
 import Badge from "@/components/shared/Badge";
 import StarRating from "@/components/shared/StarRating";
 import ParkingCard from "@/components/shared/ParkingCard";
 import Reveal from "@/components/shared/Reveal";
-import { parkingSpots, reviews } from "@/lib/mock-data";
+import ShareButton from "@/components/parking/ShareButton";
+import ReportSpotPanel from "@/components/parking/ReportSpotPanel";
+import ReviewsSection from "@/components/parking/ReviewsSection";
+import { usePublicSpots } from "@/hooks/usePublicSpots";
+import { useSession } from "@/hooks/useSession";
+
+const MapView = dynamic(() => import("@/components/shared/MapView"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full w-full items-center justify-center bg-primary-light/40">
+      <p className="text-sm font-semibold text-primary-hover">Loading map…</p>
+    </div>
+  ),
+});
 
 const amenityIcons: Record<string, any> = {
   CCTV: Camera,
@@ -37,19 +50,89 @@ export default function ParkingDetailsPage({
 }: {
   params: { id: string };
 }) {
-  const spot = parkingSpots.find((s) => s.id === params.id) ?? parkingSpots[0];
+  const { spots, loading, refresh: refreshSpots } = usePublicSpots();
+  const { user } = useSession();
+  const router = useRouter();
   const [activeImage, setActiveImage] = useState(0);
   const [saved, setSaved] = useState(false);
+  const [savePending, setSavePending] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
-  if (!spot) return notFound();
+  const spot = spots?.find((s) => s.id === params.id) ?? null;
+
+  useEffect(() => {
+    if (!spot || !user) return;
+    let cancelled = false;
+    fetch("/api/favorites")
+      .then((res) => (res.ok ? res.json() : { spotIds: [] }))
+      .then((data) => {
+        if (!cancelled) setSaved((data.spotIds ?? []).includes(spot.id));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spot?.id, user?.id]);
+
+  async function toggleSaved() {
+    if (!spot) return;
+    if (!user) {
+      router.push(`/login?next=/parking/${spot.id}`);
+      return;
+    }
+    if (savePending) return;
+
+    const next = !saved;
+    setSaved(next);
+    setSavePending(true);
+    try {
+      const res = next
+        ? await fetch("/api/favorites", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ spotId: spot.id }),
+          })
+        : await fetch(`/api/favorites?spotId=${encodeURIComponent(spot.id)}`, {
+            method: "DELETE",
+          });
+      if (!res.ok) setSaved(!next);
+    } catch {
+      setSaved(!next);
+    } finally {
+      setSavePending(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 size={24} className="animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!spot) {
+    return (
+      <div className="bg-background py-24 text-center">
+        <Container className="max-w-md">
+          <h1 className="text-2xl font-extrabold tracking-tight text-ink">
+            Parking spot not found
+          </h1>
+          <p className="mt-2 text-sm text-muted">
+            It may have been removed, or the link is out of date.
+          </p>
+        </Container>
+      </div>
+    );
+  }
 
   const gallery = [spot.image, spot.image, spot.image];
-  const nearby = parkingSpots
+  const allSpots = spots ?? [];
+  const nearby = allSpots
     .filter((s) => s.id !== spot.id && s.city === spot.city)
     .slice(0, 3)
-    .concat(
-      parkingSpots.filter((s) => s.id !== spot.id && s.city !== spot.city)
-    )
+    .concat(allSpots.filter((s) => s.id !== spot.id && s.city !== spot.city))
     .slice(0, 3);
 
   return (
@@ -97,6 +180,7 @@ export default function ParkingDetailsPage({
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone="primary">{spot.parkingType}</Badge>
                     {spot.isOpen24h && <Badge tone="success">Open 24h</Badge>}
+                    {spot.isCommunitySubmitted && <Badge tone="default">Community-submitted</Badge>}
                   </div>
                   <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-ink sm:text-4xl">
                     {spot.name}
@@ -112,32 +196,45 @@ export default function ParkingDetailsPage({
 
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setSaved((v) => !v)}
-                    className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-white transition-colors hover:border-danger/40 hover:bg-danger/5"
+                    onClick={toggleSaved}
+                    disabled={savePending}
+                    className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-white transition-colors hover:border-danger/40 hover:bg-danger/5 disabled:opacity-60"
                   >
                     <Heart
                       size={18}
                       className={saved ? "fill-danger text-danger" : "text-ink/60"}
                     />
                   </button>
-                  <button className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-white transition-colors hover:border-primary/40 hover:bg-primary-light/40">
-                    <Share2 size={18} className="text-ink/60" />
-                  </button>
-                  <button className="flex items-center gap-2 rounded-full border border-border bg-white px-4 py-2.5 text-sm font-semibold text-ink/70 transition-colors hover:border-danger/40 hover:bg-danger/5 hover:text-danger">
+                  <ShareButton spotName={spot.name} />
+                  <button
+                    onClick={() => {
+                      if (!user) {
+                        router.push(`/login?next=/parking/${spot.id}`);
+                        return;
+                      }
+                      setReportOpen((open) => !open);
+                    }}
+                    className="flex items-center gap-2 rounded-full border border-border bg-white px-4 py-2.5 text-sm font-semibold text-ink/70 transition-colors hover:border-danger/40 hover:bg-danger/5 hover:text-danger"
+                  >
                     <Flag size={15} />
                     Report
                   </button>
                 </div>
               </div>
+
+              {reportOpen && (
+                <ReportSpotPanel spotId={spot.id} onClose={() => setReportOpen(false)} />
+              )}
             </Reveal>
 
-            {/* Map placeholder */}
+            {/* Location map */}
             <Reveal delay={0.1}>
-              <div className="mt-8 flex h-72 items-center justify-center rounded-3xl border border-border bg-primary-light/40">
-                <div className="flex flex-col items-center gap-2 text-primary-hover">
-                  <MapPin size={28} />
-                  <p className="text-sm font-semibold">Map placeholder</p>
-                </div>
+              <div className="mt-8 h-72 overflow-hidden rounded-3xl border border-border">
+                <MapView
+                  spots={[spot]}
+                  linkToDetails={false}
+                  className="h-full w-full"
+                />
               </div>
             </Reveal>
 
@@ -195,49 +292,11 @@ export default function ParkingDetailsPage({
 
             {/* Reviews */}
             <Reveal delay={0.25}>
-              <div className="mt-12">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-bold text-ink">
-                    Reviews ({spot.reviewCount})
-                  </h2>
-                  <button className="btn-secondary !py-2.5 !px-5 text-xs">
-                    Write a Review
-                  </button>
-                </div>
-
-                <div className="mt-6 space-y-5">
-                  {reviews.map((review) => (
-                    <div
-                      key={review.id}
-                      className="card-surface p-6"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-light text-sm font-bold text-primary-hover">
-                            {review.author.charAt(0)}
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-ink">
-                              {review.author}
-                            </p>
-                            <p className="text-xs text-muted">
-                              {review.date} · {review.vehicleType}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1 text-warning">
-                          {Array.from({ length: review.rating }).map((_, i) => (
-                            <Star key={i} size={13} className="fill-warning" />
-                          ))}
-                        </div>
-                      </div>
-                      <p className="mt-4 text-sm leading-relaxed text-ink/80">
-                        {review.comment}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <ReviewsSection
+                spotId={spot.id}
+                currentUser={user}
+                onReviewSaved={refreshSpots}
+              />
             </Reveal>
           </div>
 
@@ -256,8 +315,12 @@ export default function ParkingDetailsPage({
               <button className="btn-primary mt-5 w-full">
                 Get Directions
               </button>
-              <button className="btn-secondary mt-3 w-full">
-                Save for Later
+              <button
+                onClick={toggleSaved}
+                disabled={savePending}
+                className="btn-secondary mt-3 w-full disabled:opacity-60"
+              >
+                {saved ? "Saved" : "Save for Later"}
               </button>
 
               <div className="mt-6 space-y-3 border-t border-border pt-6 text-sm">

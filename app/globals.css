@@ -79,6 +79,20 @@
   animation: fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* Leaflet maps: contain internal panes/controls in their own stacking
+   context so they never render above the sticky navbar (z-50). */
+.leaflet-container {
+  isolation: isolate;
+  z-index: 0;
+  font-family: inherit;
+}
+.leaflet-popup-content-wrapper {
+  border-radius: 1rem;
+}
+.leaflet-popup-content {
+  margin: 12px 14px;
+}
+
 /* Hide scrollbar for horizontal carousels while keeping scroll functionality */
 .no-scrollbar::-webkit-scrollbar {
   display: none;

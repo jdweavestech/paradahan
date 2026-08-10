@@ -4,7 +4,7 @@ import { useState } from "react";
 import { MapPin, Car, Search } from "lucide-react";
 import { popularSearches } from "@/lib/mock-data";
 
-const vehicleOptions = ["Car", "Motorcycle", "Van/SUV", "Truck"];
+const vehicleOptions = ["Car", "Motorcycle", "Bike", "Van/SUV", "Truck"];
 
 export default function SearchWidget() {
   const [focused, setFocused] = useState(false);

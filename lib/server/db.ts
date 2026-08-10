@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
+import { isAdminEmail } from "./admin";
 
 /**
  * Lightweight JSON-file user store.
@@ -78,7 +79,13 @@ export function createUser(input: {
 }
 
 export function toPublicUser(user: UserRecord) {
-  return { id: user.id, fullName: user.fullName, email: user.email, createdAt: user.createdAt };
+  return {
+    id: user.id,
+    fullName: user.fullName,
+    email: user.email,
+    createdAt: user.createdAt,
+    isAdmin: isAdminEmail(user.email),
+  };
 }
 
 export function setResetToken(userId: string, tokenHash: string, expiresAt: string): void {
@@ -98,6 +105,20 @@ export function getUserByValidResetTokenHash(tokenHash: string): UserRecord | nu
   if (!user.resetTokenExpiresAt || new Date(user.resetTokenExpiresAt).getTime() < Date.now()) {
     return null;
   }
+  return user;
+}
+
+export function updateUserProfile(
+  userId: string,
+  updates: { fullName?: string }
+): UserRecord | null {
+  const users = readAll();
+  const user = users.find((u) => u.id === userId);
+  if (!user) return null;
+  if (typeof updates.fullName === "string" && updates.fullName.trim()) {
+    user.fullName = updates.fullName.trim();
+  }
+  writeAll(users);
   return user;
 }
 

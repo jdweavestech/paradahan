@@ -8,6 +8,7 @@ export interface SessionUser {
   fullName: string;
   email: string;
   createdAt: string;
+  isAdmin: boolean;
 }
 
 /**

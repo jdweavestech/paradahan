@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { parkingSpots } from "@/lib/mock-data";
+import { useMemo, useRef } from "react";
+import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { usePublicSpots } from "@/hooks/usePublicSpots";
 import ParkingCard from "../shared/ParkingCard";
 import Container from "../shared/Container";
 import SectionHeading from "../shared/SectionHeading";
@@ -10,6 +10,19 @@ import Reveal from "../shared/Reveal";
 
 export default function RecentlyAdded() {
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const { spots, loading } = usePublicSpots();
+
+  // Community submissions carry an addedAt date, so they surface first;
+  // the curated seed set (no addedAt) fills the rest in its original order.
+  const ordered = useMemo(() => {
+    if (!spots) return [];
+    return [...spots].sort((a, b) => {
+      if (a.addedAt && b.addedAt) return b.addedAt.localeCompare(a.addedAt);
+      if (a.addedAt) return -1;
+      if (b.addedAt) return 1;
+      return 0;
+    });
+  }, [spots]);
 
   const scrollBy = (dir: 1 | -1) => {
     scrollerRef.current?.scrollBy({
@@ -46,18 +59,24 @@ export default function RecentlyAdded() {
         </div>
 
         <Reveal delay={0.15}>
-          <div
-            ref={scrollerRef}
-            className="no-scrollbar mt-10 flex gap-5 overflow-x-auto scroll-smooth pb-4"
-          >
-            {parkingSpots.map((spot) => (
-              <ParkingCard
-                key={spot.id}
-                spot={spot}
-                className="w-[300px] shrink-0 sm:w-[320px]"
-              />
-            ))}
-          </div>
+          {loading ? (
+            <div className="mt-10 flex h-40 items-center justify-center text-muted">
+              <Loader2 size={20} className="animate-spin" />
+            </div>
+          ) : (
+            <div
+              ref={scrollerRef}
+              className="no-scrollbar mt-10 flex gap-5 overflow-x-auto scroll-smooth pb-4"
+            >
+              {ordered.map((spot) => (
+                <ParkingCard
+                  key={spot.id}
+                  spot={spot}
+                  className="w-[300px] shrink-0 sm:w-[320px]"
+                />
+              ))}
+            </div>
+          )}
         </Reveal>
       </Container>
     </section>

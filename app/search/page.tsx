@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import {
   MapPin,
   SlidersHorizontal,
@@ -8,18 +9,31 @@ import {
   List,
   ChevronDown,
   Map as MapIcon,
+  Loader2,
 } from "lucide-react";
 import Container from "@/components/shared/Container";
 import ParkingCard from "@/components/shared/ParkingCard";
 import Reveal from "@/components/shared/Reveal";
-import { parkingSpots } from "@/lib/mock-data";
+import { usePublicSpots } from "@/hooks/usePublicSpots";
 
-const vehicleFilters = ["Car", "Motorcycle", "Van/SUV", "Truck"];
+const MapView = dynamic(() => import("@/components/shared/MapView"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full w-full items-center justify-center bg-primary-light/40">
+      <p className="text-sm font-semibold text-primary-hover">Loading map…</p>
+    </div>
+  ),
+});
+
+const vehicleFilters = ["Car", "Motorcycle", "Bike", "Van/SUV", "Truck"];
 const typeFilters = ["Covered", "Open-air", "Multi-level", "Street"];
 
 export default function SearchPage() {
   const [view, setView] = useState<"grid" | "list">("grid");
   const [showMap, setShowMap] = useState(true);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const { spots, loading } = usePublicSpots();
+  const results = spots ?? [];
 
   return (
     <div className="bg-background">
@@ -122,7 +136,7 @@ export default function SearchPage() {
             <div className="flex flex-wrap items-center justify-between gap-4">
               <p className="text-sm text-muted">
                 <span className="font-bold text-ink">
-                  {parkingSpots.length}
+                  {results.length}
                 </span>{" "}
                 parking spaces found
               </p>
@@ -173,35 +187,45 @@ export default function SearchPage() {
                 showMap ? "xl:grid-cols-[1fr_380px]" : ""
               }`}
             >
-              <div
-                className={
-                  view === "grid"
-                    ? "grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-2"
-                    : "flex flex-col gap-5"
-                }
-              >
-                {parkingSpots.map((spot, i) => (
-                  <Reveal key={spot.id} delay={i * 0.05}>
-                    <ParkingCard
-                      spot={spot}
-                      className={view === "list" ? "sm:flex sm:max-w-none" : ""}
-                    />
-                  </Reveal>
-                ))}
-              </div>
+              {loading ? (
+                <div className="flex h-64 items-center justify-center text-muted">
+                  <Loader2 size={22} className="animate-spin" />
+                </div>
+              ) : (
+                <div
+                  className={
+                    view === "grid"
+                      ? "grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-2"
+                      : "flex flex-col gap-5"
+                  }
+                >
+                  {results.map((spot, i) => (
+                    <Reveal key={spot.id} delay={i * 0.05}>
+                      <div
+                        onMouseEnter={() => setActiveId(spot.id)}
+                        onMouseLeave={() =>
+                          setActiveId((cur) => (cur === spot.id ? null : cur))
+                        }
+                      >
+                        <ParkingCard
+                          spot={spot}
+                          className={view === "list" ? "sm:flex sm:max-w-none" : ""}
+                        />
+                      </div>
+                    </Reveal>
+                  ))}
+                </div>
+              )}
 
-              {showMap && (
+              {showMap && !loading && (
                 <div className="hidden xl:block">
-                  <div className="sticky top-24 flex h-[640px] items-center justify-center overflow-hidden rounded-3xl border border-border bg-primary-light/40">
-                    <div className="flex flex-col items-center gap-3 text-primary-hover">
-                      <MapIcon size={36} />
-                      <p className="text-sm font-semibold">
-                        Interactive map placeholder
-                      </p>
-                      <p className="max-w-[200px] text-center text-xs text-muted">
-                        Map integration will render live pins here.
-                      </p>
-                    </div>
+                  <div className="sticky top-24 h-[640px] overflow-hidden rounded-3xl border border-border">
+                    <MapView
+                      spots={results}
+                      activeId={activeId}
+                      onMarkerClick={setActiveId}
+                      className="h-full w-full"
+                    />
                   </div>
                 </div>
               )}

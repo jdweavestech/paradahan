@@ -128,6 +128,38 @@ export default function Navbar() {
                       <p className="truncate text-xs text-muted">{user.email}</p>
                     </div>
                   </div>
+                  <div className="mt-3 flex flex-col gap-1">
+                    <Link
+                      href="/account?tab=profile"
+                      onClick={() => setOpen(false)}
+                      className="rounded-xl px-3 py-2.5 text-sm font-medium text-ink/80 hover:bg-ink/5"
+                    >
+                      My Account
+                    </Link>
+                    <Link
+                      href="/account?tab=saved"
+                      onClick={() => setOpen(false)}
+                      className="rounded-xl px-3 py-2.5 text-sm font-medium text-ink/80 hover:bg-ink/5"
+                    >
+                      My Saved Spots
+                    </Link>
+                    <Link
+                      href="/account?tab=contributions"
+                      onClick={() => setOpen(false)}
+                      className="rounded-xl px-3 py-2.5 text-sm font-medium text-ink/80 hover:bg-ink/5"
+                    >
+                      My Contributions
+                    </Link>
+                    {user.isAdmin && (
+                      <Link
+                        href="/admin"
+                        onClick={() => setOpen(false)}
+                        className="rounded-xl px-3 py-2.5 text-sm font-medium text-primary hover:bg-primary-light/40"
+                      >
+                        Moderation
+                      </Link>
+                    )}
+                  </div>
                   <button
                     onClick={async () => {
                       await fetch("/api/auth/logout", { method: "POST" });

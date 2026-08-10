@@ -1,9 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, LogOut } from "lucide-react";
+import { ChevronDown, LogOut, UserCog, Heart, MapPinPlus, ShieldCheck } from "lucide-react";
 import type { SessionUser } from "@/hooks/useSession";
+
+const menuLinks = [
+  { label: "My Account", href: "/account?tab=profile", icon: UserCog },
+  { label: "My Saved Spots", href: "/account?tab=saved", icon: Heart },
+  { label: "My Contributions", href: "/account?tab=contributions", icon: MapPinPlus },
+];
 
 export default function UserMenu({
   user,
@@ -73,6 +80,31 @@ export default function UserMenu({
           <div className="border-b border-border px-3 py-2.5">
             <p className="truncate text-sm font-semibold text-ink">{user.fullName}</p>
             <p className="truncate text-xs text-muted">{user.email}</p>
+          </div>
+          <div className="mt-1 border-b border-border pb-1">
+            {menuLinks.map((link) => (
+              <Link
+                key={link.label}
+                role="menuitem"
+                href={link.href}
+                onClick={() => setOpen(false)}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-ink/80 transition-colors hover:bg-ink/5"
+              >
+                <link.icon size={16} />
+                {link.label}
+              </Link>
+            ))}
+            {user.isAdmin && (
+              <Link
+                role="menuitem"
+                href="/admin"
+                onClick={() => setOpen(false)}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-primary transition-colors hover:bg-primary-light/40"
+              >
+                <ShieldCheck size={16} />
+                Moderation
+              </Link>
+            )}
           </div>
           <button
             role="menuitem"

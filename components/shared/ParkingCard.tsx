@@ -1,21 +1,72 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Heart, MapPin, Clock, Car } from "lucide-react";
 import { ParkingSpot } from "@/lib/types";
+import { useSession } from "@/hooks/useSession";
 import StarRating from "./StarRating";
 import Badge from "./Badge";
 
 interface ParkingCardProps {
   spot: ParkingSpot;
   className?: string;
+  /** Pre-fetched saved state, e.g. from the account page's saved-spots list — skips the per-card favorites lookup. */
+  initialSaved?: boolean;
 }
 
-export default function ParkingCard({ spot, className }: ParkingCardProps) {
-  const [saved, setSaved] = useState(false);
+export default function ParkingCard({ spot, className, initialSaved }: ParkingCardProps) {
+  const { user } = useSession();
+  const router = useRouter();
+  const [saved, setSaved] = useState(initialSaved ?? false);
+  const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    if (initialSaved !== undefined || !user) return;
+    let cancelled = false;
+    fetch("/api/favorites")
+      .then((res) => (res.ok ? res.json() : { spotIds: [] }))
+      .then((data) => {
+        if (!cancelled) setSaved((data.spotIds ?? []).includes(spot.id));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, spot.id]);
+
+  async function toggleSaved(e: React.MouseEvent) {
+    e.preventDefault();
+    if (!user) {
+      router.push("/login?next=/search");
+      return;
+    }
+    if (pending) return;
+
+    const next = !saved;
+    setSaved(next); // optimistic
+    setPending(true);
+    try {
+      const res = next
+        ? await fetch("/api/favorites", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ spotId: spot.id }),
+          })
+        : await fetch(`/api/favorites?spotId=${encodeURIComponent(spot.id)}`, {
+            method: "DELETE",
+          });
+      if (!res.ok) setSaved(!next); // revert on failure
+    } catch {
+      setSaved(!next);
+    } finally {
+      setPending(false);
+    }
+  }
 
   return (
     <motion.div
@@ -35,15 +86,14 @@ export default function ParkingCard({ spot, className }: ParkingCardProps) {
           <div className="absolute left-3 top-3 flex gap-2">
             <Badge tone="dark">{spot.parkingType}</Badge>
             {spot.isOpen24h && <Badge tone="success">Open 24h</Badge>}
+            {spot.isCommunitySubmitted && <Badge tone="primary">Community</Badge>}
           </div>
           <button
-            onClick={(e) => {
-              e.preventDefault();
-              setSaved((s) => !s);
-            }}
+            onClick={toggleSaved}
             aria-label={saved ? "Remove from saved" : "Save parking spot"}
             aria-pressed={saved}
-            className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 backdrop-blur-md transition-transform duration-200 hover:scale-110 active:scale-95"
+            className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 backdrop-blur-md transition-transform duration-200 hover:scale-110 active:scale-95 disabled:opacity-70"
+            disabled={pending}
           >
             <Heart
               size={17}

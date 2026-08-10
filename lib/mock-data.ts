@@ -1,8 +1,10 @@
-import { CityInfo, ParkingSpot, Review } from "./types";
+import { CityInfo, ParkingSpot } from "./types";
 
 export const parkingSpots: ParkingSpot[] = [
   {
     id: "spot-ayala-triangle",
+    lat: 14.5568,
+    lng: 121.0245,
     name: "Ayala Triangle Gardens Parking",
     city: "Makati",
     address: "Paseo de Roxas, Makati City",
@@ -21,6 +23,8 @@ export const parkingSpots: ParkingSpot[] = [
   },
   {
     id: "spot-sm-north",
+    lat: 14.6572,
+    lng: 121.0316,
     name: "SM North EDSA – The Block Basement",
     city: "Quezon City",
     address: "North Ave, Quezon City",
@@ -39,6 +43,8 @@ export const parkingSpots: ParkingSpot[] = [
   },
   {
     id: "spot-bgc-mall",
+    lat: 14.5514,
+    lng: 121.0498,
     name: "Bonifacio High Street Central Parking",
     city: "Taguig",
     address: "26th St, Bonifacio Global City, Taguig",
@@ -57,6 +63,8 @@ export const parkingSpots: ParkingSpot[] = [
   },
   {
     id: "spot-cebu-it-park",
+    lat: 10.3298,
+    lng: 123.9058,
     name: "Cebu IT Park Open Lot",
     city: "Cebu City",
     address: "Cardinal Rosales Ave, Cebu IT Park",
@@ -75,6 +83,8 @@ export const parkingSpots: ParkingSpot[] = [
   },
   {
     id: "spot-davao-abreeza",
+    lat: 7.0873,
+    lng: 125.6127,
     name: "Abreeza Mall Covered Deck",
     city: "Davao City",
     address: "J.P. Laurel Ave, Davao City",
@@ -93,6 +103,8 @@ export const parkingSpots: ParkingSpot[] = [
   },
   {
     id: "spot-naia-t3",
+    lat: 14.5181,
+    lng: 121.0193,
     name: "NAIA Terminal 3 Long-Term Lot",
     city: "Pasay",
     address: "NAIA Terminal 3, Pasay City",
@@ -159,36 +171,6 @@ export const cities: CityInfo[] = [
     parkingCount: 64,
     image:
       "https://images.unsplash.com/photo-1470004914212-05527e49370b?q=80&w=1200&auto=format&fit=crop",
-  },
-];
-
-export const reviews: Review[] = [
-  {
-    id: "rev-1",
-    author: "Marco D.",
-    rating: 5,
-    date: "March 2026",
-    comment:
-      "Super convenient and the guards are attentive. Found a spot easily even during a weekday rush.",
-    vehicleType: "Car",
-  },
-  {
-    id: "rev-2",
-    author: "Ellaine T.",
-    rating: 4,
-    date: "February 2026",
-    comment:
-      "Rates are fair and clearly posted. Could use better signage near the entrance ramp.",
-    vehicleType: "Van/SUV",
-  },
-  {
-    id: "rev-3",
-    author: "Jhun P.",
-    rating: 5,
-    date: "January 2026",
-    comment:
-      "Motorcycle bay is spacious and shaded. I always come back here when I'm in the area.",
-    vehicleType: "Motorcycle",
   },
 ];
 
