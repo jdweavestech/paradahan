@@ -5,6 +5,7 @@ import { issueSessionToken, sessionCookieOptions } from "@/lib/server/session";
 import { validateLogin } from "@/lib/server/validation";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   let body: unknown;
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest) {
   }
 
   const normalizedEmail = String(email).trim().toLowerCase();
-  const user = getUserByEmail(normalizedEmail);
+  const user = await getUserByEmail(normalizedEmail);
 
   // Same generic message for "no such user" and "wrong password" so we
   // don't leak which emails are registered.

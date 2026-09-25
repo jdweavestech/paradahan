@@ -8,12 +8,13 @@ import {
 import type { SubmissionStatus } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const { user, response } = await requireAdmin();
   if (response) return response;
 
-  const existing = getSubmissionById(params.id);
+  const existing = await getSubmissionById(params.id);
   if (!existing) {
     return NextResponse.json({ error: "Submission not found." }, { status: 404 });
   }
@@ -33,7 +34,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     );
   }
 
-  const updated = updateSubmissionStatus(
+  const updated = await updateSubmissionStatus(
     params.id,
     status as SubmissionStatus,
     user!.fullName,
@@ -47,7 +48,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   const { response } = await requireAdmin();
   if (response) return response;
 
-  const deleted = deleteSubmission(params.id);
+  const deleted = await deleteSubmission(params.id);
   if (!deleted) {
     return NextResponse.json({ error: "Submission not found." }, { status: 404 });
   }

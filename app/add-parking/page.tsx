@@ -51,21 +51,28 @@ const amenitiesList = [
   "Elevator Access",
 ];
 
-// Photos are read client-side into small base64 previews and sent as part
-// of the JSON submission. Fine for a handful of demo photos; a production
-// build should upload straight to object storage (S3/Supabase Storage) and
-// only send back the resulting URLs. Keep it small to stay under the API's
-// request-size cap.
+// Photos upload straight from the browser to Supabase Storage using a
+// one-time signed URL from /api/uploads; the submission only carries the
+// resulting public URLs. The bucket enforces the same 5MB limit server-side.
 const MAX_PHOTOS = 3;
-const MAX_PHOTO_BYTES = 1.5 * 1024 * 1024;
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error("Could not read file"));
-    reader.readAsDataURL(file);
+async function uploadPhoto(file: File): Promise<string> {
+  const res = await fetch("/api/uploads", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contentType: file.type }),
   });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? "Couldn't upload that photo.");
+
+  const upload = await fetch(data.uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": file.type },
+    body: file,
+  });
+  if (!upload.ok) throw new Error("Couldn't upload that photo. Please try again.");
+  return data.publicUrl as string;
 }
 
 export default function AddParkingPage() {
@@ -88,6 +95,7 @@ export default function AddParkingPage() {
   const [rateUnit, setRateUnit] = useState<"hour" | "entry" | "day">("hour");
   const [photos, setPhotos] = useState<string[]>([]);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [uploadingCount, setUploadingCount] = useState(0);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -106,19 +114,31 @@ export default function AddParkingPage() {
     e.target.value = ""; // allow picking the same file again later
     setPhotoError(null);
 
-    const room = MAX_PHOTOS - photos.length;
+    const room = MAX_PHOTOS - photos.length - uploadingCount;
     if (room <= 0) return;
 
-    const accepted: string[] = [];
-    for (const file of files.slice(0, room)) {
-      if (!file.type.startsWith("image/")) continue;
+    const accepted = files.slice(0, room).filter((file) => {
+      if (!file.type.startsWith("image/")) return false;
       if (file.size > MAX_PHOTO_BYTES) {
-        setPhotoError("Each photo should be under 1.5MB.");
-        continue;
+        setPhotoError("Each photo should be under 5MB.");
+        return false;
       }
-      accepted.push(await fileToDataUrl(file));
-    }
-    if (accepted.length) setPhotos((p) => [...p, ...accepted]);
+      return true;
+    });
+
+    await Promise.all(
+      accepted.map(async (file) => {
+        setUploadingCount((n) => n + 1);
+        try {
+          const url = await uploadPhoto(file);
+          setPhotos((p) => (p.length < MAX_PHOTOS ? [...p, url] : p));
+        } catch (err) {
+          setPhotoError(err instanceof Error ? err.message : "Couldn't upload that photo.");
+        } finally {
+          setUploadingCount((n) => n - 1);
+        }
+      })
+    );
   }
 
   function removePhoto(index: number) {
@@ -525,7 +545,16 @@ export default function AddParkingPage() {
                           </button>
                         </div>
                       ))}
-                      {photos.length < MAX_PHOTOS && (
+                      {Array.from({ length: uploadingCount }).map((_, i) => (
+                        <div
+                          key={`uploading-${i}`}
+                          className="flex aspect-square flex-col items-center justify-center gap-2 rounded-2xl border border-border bg-background text-muted"
+                        >
+                          <Loader2 size={20} className="animate-spin" />
+                          <span className="text-xs font-medium">Uploading…</span>
+                        </div>
+                      ))}
+                      {photos.length + uploadingCount < MAX_PHOTOS && (
                         <button
                           type="button"
                           onClick={() => fileInputRef.current?.click()}
@@ -537,7 +566,7 @@ export default function AddParkingPage() {
                       )}
                     </div>
                     {photoError && <p className="mt-2 text-xs font-medium text-danger">{photoError}</p>}
-                    <p className="mt-2 text-xs text-muted">Up to {MAX_PHOTOS} photos, 1.5MB each. Optional.</p>
+                    <p className="mt-2 text-xs text-muted">Up to {MAX_PHOTOS} photos, 5MB each. Optional.</p>
                   </Field>
                   <div className="rounded-2xl bg-primary-light/50 p-5 text-sm text-primary-hover">
                     Ready to submit! A moderator will review your entry before
@@ -570,7 +599,11 @@ export default function AddParkingPage() {
                   setStep((s) => Math.min(steps.length - 1, s + 1));
                 }
               }}
-              disabled={(step === 0 && (!coords || !name || !address || !city)) || submitting}
+              disabled={
+                (step === 0 && (!coords || !name || !address || !city)) ||
+                submitting ||
+                (isLast && uploadingCount > 0)
+              }
               className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? (

@@ -61,7 +61,7 @@ export default function ForgotPasswordPage() {
                     Forgot your password?
                   </h1>
                   <p className="mt-2 text-sm text-muted">
-                    Enter the email on your account and we&apos;ll generate a reset link.
+                    Enter the email on your account and we&apos;ll email you a reset link.
                   </p>
                 </div>
 
@@ -103,19 +103,18 @@ export default function ForgotPasswordPage() {
                   <CheckCircle2 size={22} />
                 </span>
                 <h1 className="mt-4 text-2xl font-extrabold tracking-tight text-ink">
-                  Check your link
+                  Check your email
                 </h1>
                 <p className="mt-2 text-sm text-muted">{result.message}</p>
 
                 {result.resetUrl && (
                   <div className="mt-6 rounded-2xl border border-warning/20 bg-warning/5 p-4 text-left">
                     <p className="text-xs font-semibold uppercase tracking-wide text-warning">
-                      Dev mode — no email service configured yet
+                      Dev mode — email isn&apos;t configured locally
                     </p>
                     <p className="mt-1.5 text-xs text-muted">
-                      Paradahan doesn&apos;t send real emails yet, so here&apos;s your reset
-                      link directly. Once an email provider is wired up, this link will be
-                      emailed instead of shown here.
+                      RESEND_API_KEY isn&apos;t set, so here&apos;s the reset link directly.
+                      In production it&apos;s only ever sent by email.
                     </p>
                     <Link
                       href={result.resetUrl}

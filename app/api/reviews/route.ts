@@ -6,13 +6,14 @@ import { getPublicSpotById } from "@/lib/server/parkingStore";
 import type { VehicleType } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const spotId = req.nextUrl.searchParams.get("spotId");
   if (!spotId) {
     return NextResponse.json({ error: "spotId is required." }, { status: 400 });
   }
-  return NextResponse.json({ reviews: getReviewsBySpot(spotId) });
+  return NextResponse.json({ reviews: await getReviewsBySpot(spotId) });
 }
 
 export async function POST(req: NextRequest) {
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
 
   const input = body as Record<string, unknown>;
   const spotId = typeof input.spotId === "string" ? input.spotId : "";
-  if (!spotId || !getPublicSpotById(spotId)) {
+  if (!spotId || !(await getPublicSpotById(spotId))) {
     return NextResponse.json(
       { errors: { form: "That parking spot couldn't be found." } },
       { status: 404 }
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ errors }, { status: 400 });
   }
 
-  const review = upsertReview({
+  const review = await upsertReview({
     spotId,
     userId: user.id,
     author: user.fullName,

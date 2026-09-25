@@ -146,6 +146,48 @@ export function validateReport(input: { reason?: unknown; details?: unknown }): 
   return errors;
 }
 
+const VALID_CONTACT_SUBJECTS = [
+  "General Inquiry",
+  "Report Incorrect Information",
+  "Partnership",
+  "Bug Report",
+];
+
+export function validateContactMessage(input: {
+  fullName?: unknown;
+  email?: unknown;
+  subject?: unknown;
+  message?: unknown;
+}): FieldErrors {
+  const errors: FieldErrors = {};
+  const fullName = typeof input.fullName === "string" ? input.fullName.trim() : "";
+  const email = typeof input.email === "string" ? input.email.trim() : "";
+  const subject = typeof input.subject === "string" ? input.subject : "";
+  const message = typeof input.message === "string" ? input.message.trim() : "";
+
+  if (!fullName) errors.fullName = "Your name is required.";
+  else if (fullName.length > 120) errors.fullName = "Name is too long.";
+
+  if (!email) errors.email = "Email is required.";
+  else if (!EMAIL_RE.test(email)) errors.email = "Enter a valid email address.";
+
+  if (!VALID_CONTACT_SUBJECTS.includes(subject)) errors.subject = "Choose a subject.";
+
+  if (!message) errors.message = "Write a message.";
+  else if (message.length < 10) errors.message = "Message is too short.";
+  else if (message.length > 5000) errors.message = "Message is too long (max 5000 characters).";
+
+  return errors;
+}
+
+export function validateNewsletter(input: { email?: unknown }): FieldErrors {
+  const errors: FieldErrors = {};
+  const email = typeof input.email === "string" ? input.email.trim() : "";
+  if (!email) errors.email = "Email is required.";
+  else if (!EMAIL_RE.test(email)) errors.email = "Enter a valid email address.";
+  return errors;
+}
+
 export function validateLogin(input: { email?: unknown; password?: unknown }): FieldErrors {
   const errors: FieldErrors = {};
 

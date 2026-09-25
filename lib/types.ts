@@ -24,6 +24,10 @@ export interface ParkingSpot {
   isCommunitySubmitted?: boolean;
   /** ISO date used to sort "recently added" — only set for community submissions. */
   addedAt?: string;
+  /** Extra gallery photos (community submissions); `image` is always the first. */
+  photos?: string[];
+  /** Free-text notes from the submitter (entrance, landmarks, etc.). */
+  description?: string;
 }
 
 /** Status of a community-submitted parking spot, set by moderators. */
@@ -54,7 +58,7 @@ export interface ParkingSubmission {
   isOpen24h: boolean;
   rate: number | null;
   rateUnit: "hour" | "entry" | "day";
-  photos: string[]; // data URLs (small demo uploads) or hosted image URLs
+  photos: string[]; // public Supabase Storage URLs
   reviewedAt?: string;
   reviewedBy?: string; // admin's full name, for a lightweight audit trail
   reviewNote?: string; // e.g. a rejection reason
@@ -110,5 +114,30 @@ export interface SpotReport {
   reason: ReportReason;
   details: string;
   status: ReportStatus;
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string; // admin's full name
+}
+
+export type ContactMessageStatus = "new" | "handled";
+
+export const CONTACT_SUBJECTS = [
+  "General Inquiry",
+  "Report Incorrect Information",
+  "Partnership",
+  "Bug Report",
+] as const;
+
+export type ContactSubject = (typeof CONTACT_SUBJECTS)[number];
+
+/** A message sent through the /contact form. */
+export interface ContactMessage {
+  id: string;
+  fullName: string;
+  email: string;
+  subject: ContactSubject;
+  message: string;
+  userId?: string;
+  status: ContactMessageStatus;
   createdAt: string;
 }

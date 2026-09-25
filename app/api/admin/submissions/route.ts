@@ -4,6 +4,7 @@ import { getAllSubmissions } from "@/lib/server/parkingStore";
 import type { SubmissionStatus } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const VALID_STATUSES: SubmissionStatus[] = ["pending", "approved", "rejected"];
 
@@ -17,5 +18,5 @@ export async function GET(req: NextRequest) {
       ? (statusParam as SubmissionStatus)
       : undefined;
 
-  return NextResponse.json({ submissions: getAllSubmissions(status) });
+  return NextResponse.json({ submissions: await getAllSubmissions(status) });
 }

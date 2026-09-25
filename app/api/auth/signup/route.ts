@@ -5,6 +5,7 @@ import { issueSessionToken, sessionCookieOptions } from "@/lib/server/session";
 import { validateSignup } from "@/lib/server/validation";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   let body: unknown;
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
 
   const normalizedEmail = String(email).trim().toLowerCase();
 
-  if (getUserByEmail(normalizedEmail)) {
+  if (await getUserByEmail(normalizedEmail)) {
     return NextResponse.json(
       { errors: { email: "An account with this email already exists." } },
       { status: 409 }
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
   }
 
   const passwordHash = hashPassword(String(password));
-  const user = createUser({
+  const user = await createUser({
     fullName: String(fullName),
     email: normalizedEmail,
     passwordHash,

@@ -5,6 +5,7 @@ import { verifyPassword, hashPassword } from "@/lib/server/password";
 import { validateProfileUpdate } from "@/lib/server/validation";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function PATCH(req: NextRequest) {
   const sessionUser = await getCurrentUser();
@@ -25,18 +26,18 @@ export async function PATCH(req: NextRequest) {
 
   // Changing the password requires re-entering the current one.
   if (typeof newPassword === "string" && newPassword.length > 0) {
-    const fullUser = getUserById(sessionUser.id);
+    const fullUser = await getUserById(sessionUser.id);
     if (!fullUser || !verifyPassword(String(currentPassword ?? ""), fullUser.passwordHash)) {
       return NextResponse.json(
         { errors: { currentPassword: "Current password is incorrect." } },
         { status: 401 }
       );
     }
-    updateUserPassword(sessionUser.id, hashPassword(newPassword));
+    await updateUserPassword(sessionUser.id, hashPassword(newPassword));
   }
 
-  updateUserProfile(sessionUser.id, { fullName: String(fullName) });
+  await updateUserProfile(sessionUser.id, { fullName: String(fullName) });
 
-  const updated = getUserById(sessionUser.id);
+  const updated = await getUserById(sessionUser.id);
   return NextResponse.json({ user: updated ? toPublicUser(updated) : sessionUser });
 }

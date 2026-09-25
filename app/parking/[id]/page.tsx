@@ -16,6 +16,7 @@ import {
   Sun,
   Layers,
   Loader2,
+  Navigation,
 } from "lucide-react";
 import Container from "@/components/shared/Container";
 import Badge from "@/components/shared/Badge";
@@ -127,7 +128,11 @@ export default function ParkingDetailsPage({
     );
   }
 
-  const gallery = [spot.image, spot.image, spot.image];
+  // Community spots carry their own uploaded photos; curated spots only have
+  // one image, so the side tiles repeat it rather than leaving gaps.
+  const photos = spot.photos && spot.photos.length > 0 ? spot.photos : [spot.image];
+  const gallery = [0, 1, 2].map((i) => photos[i % photos.length]);
+  const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${spot.lat},${spot.lng}`;
   const allSpots = spots ?? [];
   const nearby = allSpots
     .filter((s) => s.id !== spot.id && s.city === spot.city)
@@ -151,10 +156,11 @@ export default function ParkingDetailsPage({
               />
             </div>
             <div className="hidden grid-rows-2 gap-2 sm:grid">
-              {gallery.slice(0, 2).map((img, i) => (
+              {gallery.slice(1, 3).map((img, i) => (
                 <button
                   key={i}
-                  onClick={() => setActiveImage(i)}
+                  onClick={() => setActiveImage(i + 1)}
+                  aria-label={`Show photo ${i + 2}`}
                   className="relative overflow-hidden"
                 >
                   <Image
@@ -198,6 +204,8 @@ export default function ParkingDetailsPage({
                   <button
                     onClick={toggleSaved}
                     disabled={savePending}
+                    aria-label={saved ? "Remove from saved" : "Save parking spot"}
+                    aria-pressed={saved}
                     className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-white transition-colors hover:border-danger/40 hover:bg-danger/5 disabled:opacity-60"
                   >
                     <Heart
@@ -226,6 +234,17 @@ export default function ParkingDetailsPage({
                 <ReportSpotPanel spotId={spot.id} onClose={() => setReportOpen(false)} />
               )}
             </Reveal>
+
+            {spot.description && (
+              <Reveal delay={0.05}>
+                <div className="mt-8">
+                  <h2 className="text-lg font-bold text-ink">About this spot</h2>
+                  <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-ink/80">
+                    {spot.description}
+                  </p>
+                </div>
+              </Reveal>
+            )}
 
             {/* Location map */}
             <Reveal delay={0.1}>
@@ -270,25 +289,27 @@ export default function ParkingDetailsPage({
             </Reveal>
 
             {/* Amenities */}
-            <Reveal delay={0.2}>
-              <div className="mt-10">
-                <h2 className="text-lg font-bold text-ink">Amenities</h2>
-                <div className="mt-4 flex flex-wrap gap-3">
-                  {spot.amenities.map((a) => {
-                    const Icon = amenityIcons[a] ?? ShieldCheck;
-                    return (
-                      <span
-                        key={a}
-                        className="flex items-center gap-2 rounded-full border border-border bg-white px-4 py-2 text-sm text-ink/80"
-                      >
-                        <Icon size={15} className="text-primary" />
-                        {a}
-                      </span>
-                    );
-                  })}
+            {spot.amenities.length > 0 && (
+              <Reveal delay={0.2}>
+                <div className="mt-10">
+                  <h2 className="text-lg font-bold text-ink">Amenities</h2>
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    {spot.amenities.map((a) => {
+                      const Icon = amenityIcons[a] ?? ShieldCheck;
+                      return (
+                        <span
+                          key={a}
+                          className="flex items-center gap-2 rounded-full border border-border bg-white px-4 py-2 text-sm text-ink/80"
+                        >
+                          <Icon size={15} className="text-primary" />
+                          {a}
+                        </span>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            </Reveal>
+              </Reveal>
+            )}
 
             {/* Reviews */}
             <Reveal delay={0.25}>
@@ -312,9 +333,15 @@ export default function ParkingDetailsPage({
                   /{spot.priceUnit}
                 </span>
               </p>
-              <button className="btn-primary mt-5 w-full">
+              <a
+                href={directionsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-primary mt-5 w-full"
+              >
+                <Navigation size={16} />
                 Get Directions
-              </button>
+              </a>
               <button
                 onClick={toggleSaved}
                 disabled={savePending}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -21,6 +21,7 @@ interface ParkingCardProps {
 export default function ParkingCard({ spot, className, initialSaved }: ParkingCardProps) {
   const { user } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
   const [saved, setSaved] = useState(initialSaved ?? false);
   const [pending, setPending] = useState(false);
 
@@ -42,7 +43,7 @@ export default function ParkingCard({ spot, className, initialSaved }: ParkingCa
   async function toggleSaved(e: React.MouseEvent) {
     e.preventDefault();
     if (!user) {
-      router.push("/login?next=/search");
+      router.push(`/login?next=${encodeURIComponent(pathname)}`);
       return;
     }
     if (pending) return;

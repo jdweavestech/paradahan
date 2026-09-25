@@ -7,20 +7,53 @@ Community-driven parking finder for the Philippines.
 - Next.js 14 (App Router) + TypeScript
 - Tailwind CSS
 - Framer Motion (micro-interactions, scroll reveals)
-- lucide-react (icons)
-- Auth backend: Next.js Route Handlers + Node's built-in `crypto`
-  (scrypt password hashing, HMAC-signed session cookies) — no external
-  auth/DB packages required to run today. See "Auth backend" below.
+- lucide-react (icons), Leaflet / react-leaflet (maps)
+- **Supabase** — Postgres database + Storage (spot photos)
+- **Vercel** — hosting
+- Auth: Next.js Route Handlers + Node's built-in `crypto` (scrypt password
+  hashing, HMAC-signed session cookies). Users live in Supabase.
+- Email: Resend (password-reset emails), optional in local dev
 
-## Getting started
+## Getting started (local)
 
-```bash
-npm install
-cp .env.example .env   # then set SESSION_SECRET
-npm run dev
-```
+1. **Create a Supabase project** at https://supabase.com.
+2. **Create the tables and photo bucket:** Supabase dashboard → SQL Editor →
+   New query → paste all of `supabase/schema.sql` → Run. (Safe to re-run.)
+3. **Configure env vars:**
+   ```bash
+   cp .env.example .env
+   ```
+   Fill in `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (Project Settings →
+   API), a random `SESSION_SECRET`, and your email in `ADMIN_EMAILS`.
+4. **Run it:**
+   ```bash
+   npm install
+   npm run dev
+   ```
+5. *(Optional)* Import accounts/reviews from the old JSON store in `data/`:
+   ```bash
+   node --env-file=.env scripts/migrate-json-to-supabase.mjs
+   ```
 
-Then open http://localhost:3000.
+## Deploying to Vercel
+
+1. Push the repo to GitHub and import it at https://vercel.com/new
+   (framework preset: Next.js — no extra config needed).
+2. Under **Settings → Environment Variables**, add everything from
+   `.env.example`: `SESSION_SECRET` (required — the app refuses to sign
+   sessions without it in production), `ADMIN_EMAILS`, `SUPABASE_URL`,
+   `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`, and `APP_URL`
+   (your production URL).
+3. Deploy. Nothing is written to the local filesystem, so it runs fine on
+   Vercel's read-only serverless functions.
+
+**Security model:** every table has Row Level Security on with *no* policies,
+so the public anon key can't touch anything. All reads/writes go through the
+API routes with the server-only service-role key; auth and permission checks
+live in those routes. Photos are uploaded by the browser straight to the
+`spot-photos` bucket using one-time signed URLs from `POST /api/uploads`
+(keeps images out of Vercel's ~4.5MB request limit); the bucket enforces a
+5MB/image-type limit.
 
 ## Auth backend
 
@@ -35,17 +68,13 @@ Then open http://localhost:3000.
   `{ user: null }` if logged out. Use this from client components; use
   `getCurrentUser()` from `lib/server/session.ts` in Server Components.
 
-**Storage:** users are currently stored in `data/users.json` (gitignored,
-created automatically on first signup). This is a drop-in stand-in so the
-backend works with zero extra installs — swap `lib/server/db.ts` for a
-Prisma/Postgres-backed version later and the API routes won't need to
-change. Not suitable for multi-instance production deployments as-is.
+**Storage:** users live in the Supabase `users` table (`lib/server/db.ts`).
 
 **Sessions:** a signed, httpOnly, 7-day cookie (`paradahan_session`)
 holding a lightweight HMAC-SHA256 token (see `lib/server/token.ts`) — same
 idea as a JWT, no external library needed. Set `SESSION_SECRET` in `.env`
-before deploying (see `.env.example`); without it, a dev-only default is
-used and a warning is logged in production.
+before deploying (see `.env.example`); without it a dev-only default is used
+locally, and production refuses to issue or accept sessions.
 
 **Logged-in state:** the Navbar (desktop + mobile) now checks the session
 via `GET /api/auth/me` (see `hooks/useSession.ts`) and swaps the Log
@@ -56,50 +85,32 @@ signed in.
 
 - `POST /api/auth/forgot-password` — `{ email }`. Always returns the same
   generic message whether or not the email is registered (so the endpoint
-  can't be used to enumerate accounts). Since there's no email provider
-  wired up yet, the response also includes `resetUrl` directly and logs
-  it to the server console — the `/forgot-password` page displays it in a
-  clearly-labeled "dev mode" box. **Remove `resetUrl` from the response
-  once a real email provider (Resend, SES, etc.) is sending the link
-  instead** — leaving it in production would let anyone reset anyone
-  else's password.
+  can't be used to enumerate accounts), and emails the link via Resend. In
+  local dev without `RESEND_API_KEY`, the link is also returned and shown
+  in a "dev mode" box; in production it is never returned.
 - `POST /api/auth/reset-password` — `{ token, password }`. Tokens are
   single-use, expire after 1 hour, and only their SHA-256 hash is ever
   stored (`lib/server/resetToken.ts`). On success the user is logged in
   immediately.
 
-**Not yet wired up:** no protected routes yet (e.g. `/add-parking` is
-public even when logged out) and no account/profile page. Natural next
-steps once you're ready for them.
+## Features
 
-## What's included
+- **Search** (`/search`) — free-text search, `?q=`/`?city=`/`?vehicle=` URL
+  params, filters (max rate, vehicle, parking type, 24h), sort (recommended,
+  top rated, lowest price, nearest via browser geolocation), live map.
+- **Cities** (`/cities`) — searchable; spot counts are live, and cities that
+  only exist through community submissions show up automatically.
+- **Parking details** — photo gallery, description, Google Maps directions,
+  save, share, report, reviews.
+- **Add Parking** (login required) — multi-step form with map pin, reverse
+  geocoding, and photo uploads to Supabase Storage. Goes to moderation.
+- **Account** (`/account`) — edit profile/password, saved spots,
+  contributions with moderation status.
+- **Moderation** (`/admin`, `ADMIN_EMAILS` only) — approve/reject/delete
+  submissions, resolve listing reports, read and triage contact messages.
+- **Contact form** and **newsletter signup** — stored in Supabase
+  (`contact_messages`, `newsletter_subscribers`).
+- **Privacy** and **Terms** pages (review these with a lawyer before launch).
 
-- `app/page.tsx` — Landing page (Hero, Features, How It Works, Recently
-  Added carousel, Community Contribution banner)
-- `app/search/page.tsx` — Search Parking (filters, map placeholder, grid/list
-  toggle, sort)
-- `app/cities/page.tsx` — Cities (search, featured cities, popular cities)
-- `app/parking/[id]/page.tsx` — Parking Details (gallery, info, rates,
-  amenities, reviews, nearby suggestions)
-- `app/add-parking/page.tsx` — Add Parking (multi-step form with progress
-  indicator)
-- `app/about/page.tsx` — About (mission, vision, why Paradahan, community)
-- `app/contact/page.tsx` — Contact (form, FAQ accordion, social links)
-- `app/not-found.tsx` — Custom 404
-- `components/layout/` — Navbar, Footer
-- `components/home/` — Landing page sections
-- `components/shared/` — Reusable primitives (ParkingCard, Reveal,
-  SectionHeading, Badge, StarRating, Container)
-- `lib/mock-data.ts` — Placeholder parking/city/review data so every page
-  renders with realistic content until the API is connected
-
-## Notes for the next part (backend)
-
-- All data currently comes from `lib/mock-data.ts` — swap these for API
-  calls when the backend is ready; component props already expect the
-  shapes defined in `lib/types.ts`.
-- Map placeholders (Search, Parking Details, Add Parking) are marked
-  clearly and ready for a real map library (e.g. Google Maps or Mapbox).
-- Forms (Add Parking, Contact) are UI-only; no submission logic yet.
-- Login/Sign Up (`/login`, `/signup`) are now functional — see "Auth
-  backend" above.
+Curated seed spots and cities still come from `lib/mock-data.ts` and are
+merged with approved community spots at read time.

@@ -2,16 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/server/session";
 import { validateParkingSubmission } from "@/lib/server/validation";
 import { createSubmission, getApprovedSpots, getSubmissionsByUser } from "@/lib/server/parkingStore";
-import { getRatingSummary } from "@/lib/server/reviewStore";
+import { getAllReviewStats, mergeRating } from "@/lib/server/reviewStore";
+import { photoPublicUrlPrefix } from "@/lib/server/supabase";
 import { parkingSpots } from "@/lib/mock-data";
 import type { VehicleType, ParkingType } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-// Small safety cap so a handful of base64 photo previews can't blow up the
-// JSON file store. Swap for real object storage (S3/Supabase Storage) before
-// accepting production traffic — see README.
-const MAX_BODY_BYTES = 8 * 1024 * 1024; // 8MB
+const VEHICLE_TYPES: VehicleType[] = ["Car", "Motorcycle", "Bike", "Van/SUV", "Truck"];
+const PARKING_TYPES: ParkingType[] = ["Covered", "Open-air", "Multi-level", "Street"];
+const RATE_UNITS = ["hour", "entry", "day"] as const;
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const MAX_PHOTOS = 3;
+
+function cleanString(value: unknown, max: number): string {
+  return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
 
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
@@ -22,17 +29,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const rawBody = await req.text();
-  if (rawBody.length > MAX_BODY_BYTES) {
-    return NextResponse.json(
-      { errors: { form: "That submission is too large. Try fewer or smaller photos." } },
-      { status: 413 }
-    );
-  }
-
   let body: unknown;
   try {
-    body = JSON.parse(rawBody);
+    body = await req.json();
   } catch {
     return NextResponse.json({ errors: { form: "Invalid request body." } }, { status: 400 });
   }
@@ -43,24 +42,47 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ errors }, { status: 400 });
   }
 
-  const submission = createSubmission({
+  // Photos are uploaded straight to Supabase Storage (see /api/uploads);
+  // only accept URLs that point at our own bucket.
+  const photoPrefix = photoPublicUrlPrefix();
+  const photos = Array.isArray(input.photos)
+    ? (input.photos as unknown[])
+        .filter((p): p is string => typeof p === "string" && p.startsWith(photoPrefix))
+        .slice(0, MAX_PHOTOS)
+    : [];
+
+  const rate = typeof input.rate === "number" && Number.isFinite(input.rate) && input.rate >= 0 ? input.rate : null;
+  const rateUnit = RATE_UNITS.includes(input.rateUnit as (typeof RATE_UNITS)[number])
+    ? (input.rateUnit as (typeof RATE_UNITS)[number])
+    : "hour";
+  const openingTime = typeof input.openingTime === "string" && TIME_RE.test(input.openingTime) ? input.openingTime : "";
+  const closingTime = typeof input.closingTime === "string" && TIME_RE.test(input.closingTime) ? input.closingTime : "";
+
+  const submission = await createSubmission({
     submittedBy: user.id,
     submittedByName: user.fullName,
-    name: String(input.name).trim(),
-    address: String(input.address).trim(),
-    city: typeof input.city === "string" ? input.city.trim() : "",
+    name: cleanString(input.name, 150),
+    address: cleanString(input.address, 300),
+    city: cleanString(input.city, 100),
     lat: Number(input.lat),
     lng: Number(input.lng),
-    description: typeof input.description === "string" ? input.description.trim() : "",
-    parkingType: (input.parkingType as ParkingType) ?? "",
-    vehicleTypes: Array.isArray(input.vehicleTypes) ? (input.vehicleTypes as VehicleType[]) : [],
-    amenities: Array.isArray(input.amenities) ? (input.amenities as string[]) : [],
-    openingTime: typeof input.openingTime === "string" ? input.openingTime : "",
-    closingTime: typeof input.closingTime === "string" ? input.closingTime : "",
-    isOpen24h: Boolean(input.isOpen24h),
-    rate: typeof input.rate === "number" ? input.rate : null,
-    rateUnit: (input.rateUnit as "hour" | "entry" | "day") ?? "hour",
-    photos: Array.isArray(input.photos) ? (input.photos as string[]).slice(0, 3) : [],
+    description: cleanString(input.description, 2000),
+    parkingType: PARKING_TYPES.includes(input.parkingType as ParkingType) ? (input.parkingType as ParkingType) : "",
+    vehicleTypes: Array.isArray(input.vehicleTypes)
+      ? VEHICLE_TYPES.filter((v) => (input.vehicleTypes as unknown[]).includes(v))
+      : [],
+    amenities: Array.isArray(input.amenities)
+      ? (input.amenities as unknown[])
+          .filter((a): a is string => typeof a === "string" && a.trim().length > 0)
+          .map((a) => a.trim().slice(0, 50))
+          .slice(0, 20)
+      : [],
+    openingTime,
+    closingTime,
+    isOpen24h: Boolean(input.isOpen24h) || !openingTime || !closingTime,
+    rate,
+    rateUnit,
+    photos,
   });
 
   return NextResponse.json({ submission }, { status: 201 });
@@ -71,7 +93,7 @@ export async function GET(req: NextRequest) {
   if (mine === "true") {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
-    return NextResponse.json({ submissions: getSubmissionsByUser(user.id) });
+    return NextResponse.json({ submissions: await getSubmissionsByUser(user.id) });
   }
 
   // Public listing: the curated seed set plus any approved community
@@ -80,9 +102,10 @@ export async function GET(req: NextRequest) {
   // recomputed here to fold in real submitted reviews on top of the
   // curated set's baked-in seed numbers (community spots start at 0/0,
   // so for those it's just the real average).
-  const spots = [...parkingSpots, ...getApprovedSpots()].map((spot) => ({
+  const [approved, stats] = await Promise.all([getApprovedSpots(), getAllReviewStats()]);
+  const spots = [...parkingSpots, ...approved].map((spot) => ({
     ...spot,
-    ...getRatingSummary(spot.id, spot.rating, spot.reviewCount),
+    ...mergeRating(spot.rating, spot.reviewCount, stats.get(spot.id)),
   }));
   return NextResponse.json({ spots });
 }

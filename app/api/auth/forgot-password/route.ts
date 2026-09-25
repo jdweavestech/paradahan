@@ -2,17 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserByEmail, setResetToken } from "@/lib/server/db";
 import { generateResetToken, RESET_TOKEN_TTL_MS } from "@/lib/server/resetToken";
 import { validateForgotPassword } from "@/lib/server/validation";
+import { isEmailConfigured, passwordResetEmail, sendEmail } from "@/lib/server/email";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 /**
- * NOTE: This project has no email-sending integration configured yet
- * (no Resend/SendGrid/SES, etc.). Rather than silently pretend an email
- * went out, we return the reset link directly in the API response so the
- * flow is actually usable end-to-end during development.
+ * Sends the reset link by email (Resend — see lib/server/email.ts).
  *
- * Before shipping this to real users, wire up an email provider, send the
- * link there instead, and remove `resetUrl` from this response.
+ * Outside production, when no email provider is configured, the link is
+ * also returned in the response so the flow is testable locally. That
+ * fallback is never used in production: returning the link there would let
+ * anyone reset anyone else's password.
  */
 export async function POST(req: NextRequest) {
   let body: unknown;
@@ -29,13 +30,13 @@ export async function POST(req: NextRequest) {
   }
 
   const normalizedEmail = String(email).trim().toLowerCase();
-  const user = getUserByEmail(normalizedEmail);
+  const user = await getUserByEmail(normalizedEmail);
 
   // Always return the same generic response whether or not the email is
   // registered, so this endpoint can't be used to find out which emails
   // have accounts.
   const genericMessage =
-    "If an account exists for that email, a password reset link has been generated.";
+    "If an account exists for that email, we've sent a link to reset your password.";
 
   if (!user) {
     return NextResponse.json({ message: genericMessage }, { status: 200 });
@@ -43,14 +44,24 @@ export async function POST(req: NextRequest) {
 
   const { raw, hash } = generateResetToken();
   const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
-  setResetToken(user.id, hash, expiresAt);
+  await setResetToken(user.id, hash, expiresAt);
 
-  const origin = req.nextUrl.origin;
+  const origin = process.env.APP_URL?.replace(/\/$/, "") || req.nextUrl.origin;
   const resetUrl = `${origin}/reset-password?token=${raw}`;
 
-  // Stand-in for "sending an email" until a real provider is wired up.
-  // eslint-disable-next-line no-console
-  console.log(`[forgot-password] Reset link for ${user.email}: ${resetUrl}`);
+  if (isEmailConfigured()) {
+    await sendEmail({ to: user.email, ...passwordResetEmail(user.fullName, resetUrl) });
+    return NextResponse.json({ message: genericMessage }, { status: 200 });
+  }
 
+  if (process.env.NODE_ENV === "production") {
+    console.error(
+      "[forgot-password] RESEND_API_KEY / EMAIL_FROM are not set — reset email was not sent."
+    );
+    return NextResponse.json({ message: genericMessage }, { status: 200 });
+  }
+
+  // Local dev without an email provider.
+  console.log(`[forgot-password] Reset link for ${user.email}: ${resetUrl}`);
   return NextResponse.json({ message: genericMessage, resetUrl }, { status: 200 });
 }

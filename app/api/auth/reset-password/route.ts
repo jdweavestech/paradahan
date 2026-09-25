@@ -6,6 +6,7 @@ import { issueSessionToken, sessionCookieOptions } from "@/lib/server/session";
 import { validateResetPassword } from "@/lib/server/validation";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   let body: unknown;
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
   }
 
   const tokenHash = hashResetToken(String(token));
-  const user = getUserByValidResetTokenHash(tokenHash);
+  const user = await getUserByValidResetTokenHash(tokenHash);
 
   if (!user) {
     return NextResponse.json(
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
   }
 
   const passwordHash = hashPassword(String(password));
-  updateUserPassword(user.id, passwordHash);
+  await updateUserPassword(user.id, passwordHash);
 
   // Log the user in right away so they land back in the app, not another form.
   const sessionToken = issueSessionToken(user.id, user.email);

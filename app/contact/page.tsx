@@ -1,10 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import { Mail, MapPin, Phone, Facebook, Instagram, Twitter, ChevronDown } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { Mail, MapPin, Phone, Facebook, Instagram, Twitter, ChevronDown, Loader2, CheckCircle2 } from "lucide-react";
 import Container from "@/components/shared/Container";
 import SectionHeading from "@/components/shared/SectionHeading";
 import Reveal from "@/components/shared/Reveal";
+import { useSession } from "@/hooks/useSession";
+import { CONTACT_SUBJECTS, type ContactSubject } from "@/lib/types";
+
+// Lets other pages deep-link a subject, e.g. /contact?subject=bug.
+const SUBJECT_ALIASES: Record<string, ContactSubject> = {
+  bug: "Bug Report",
+  report: "Report Incorrect Information",
+  partnership: "Partnership",
+};
 
 const faqs = [
   {
@@ -27,6 +36,51 @@ const faqs = [
 
 export default function ContactPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const { user } = useSession();
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [subject, setSubject] = useState<ContactSubject>("General Inquiry");
+  const [message, setMessage] = useState("");
+  const [website, setWebsite] = useState(""); // honeypot
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  useEffect(() => {
+    const alias = new URLSearchParams(window.location.search).get("subject");
+    if (alias && SUBJECT_ALIASES[alias]) setSubject(SUBJECT_ALIASES[alias]);
+  }, []);
+
+  // Prefill for logged-in users, without clobbering anything already typed.
+  useEffect(() => {
+    if (!user) return;
+    setFullName((v) => v || user.fullName);
+    setEmail((v) => v || user.email);
+  }, [user]);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setErrors({});
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fullName, email, subject, message, website }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErrors(data.errors ?? { form: "Something went wrong. Please try again." });
+        return;
+      }
+      setSent(true);
+      setMessage("");
+    } catch {
+      setErrors({ form: "Network error. Please try again." });
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="bg-background pb-24">
@@ -51,49 +105,105 @@ export default function ContactPage() {
         <Reveal>
           <div className="card-surface p-8 sm:p-10">
             <h2 className="text-xl font-bold text-ink">Send a message</h2>
-            <form
-              className="mt-6 space-y-5"
-              onSubmit={(e) => e.preventDefault()}
-            >
+            {sent ? (
+              <div className="mt-6 rounded-2xl bg-success/10 p-6 text-center">
+                <CheckCircle2 size={28} className="mx-auto text-success" />
+                <p className="mt-3 text-sm font-semibold text-ink">Message sent — thank you!</p>
+                <p className="mt-1 text-sm text-muted">
+                  We&apos;ll get back to you at {email} as soon as we can.
+                </p>
+                <button onClick={() => setSent(false)} className="btn-secondary mt-5">
+                  Send another message
+                </button>
+              </div>
+            ) : (
+            <form className="mt-6 space-y-5" onSubmit={handleSubmit} noValidate>
+              {errors.form && (
+                <p className="rounded-2xl bg-danger/10 p-4 text-sm font-medium text-danger">{errors.form}</p>
+              )}
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                 <div>
-                  <label className="mb-2 block text-sm font-semibold text-ink">
+                  <label htmlFor="contact-name" className="mb-2 block text-sm font-semibold text-ink">
                     Full Name
                   </label>
-                  <input type="text" placeholder="Juan Dela Cruz" className="input-base" />
+                  <input
+                    id="contact-name"
+                    type="text"
+                    autoComplete="name"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Juan Dela Cruz"
+                    className="input-base"
+                  />
+                  <FieldError message={errors.fullName} />
                 </div>
                 <div>
-                  <label className="mb-2 block text-sm font-semibold text-ink">
+                  <label htmlFor="contact-email" className="mb-2 block text-sm font-semibold text-ink">
                     Email
                   </label>
-                  <input type="email" placeholder="you@email.com" className="input-base" />
+                  <input
+                    id="contact-email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@email.com"
+                    className="input-base"
+                  />
+                  <FieldError message={errors.email} />
                 </div>
               </div>
               <div>
-                <label className="mb-2 block text-sm font-semibold text-ink">
+                <label htmlFor="contact-subject" className="mb-2 block text-sm font-semibold text-ink">
                   Subject
                 </label>
-                <select className="input-base">
-                  <option>General Inquiry</option>
-                  <option>Report Incorrect Information</option>
-                  <option>Partnership</option>
-                  <option>Bug Report</option>
+                <select
+                  id="contact-subject"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value as ContactSubject)}
+                  className="input-base"
+                >
+                  {CONTACT_SUBJECTS.map((s) => (
+                    <option key={s}>{s}</option>
+                  ))}
                 </select>
+                <FieldError message={errors.subject} />
               </div>
               <div>
-                <label className="mb-2 block text-sm font-semibold text-ink">
+                <label htmlFor="contact-message" className="mb-2 block text-sm font-semibold text-ink">
                   Message
                 </label>
                 <textarea
+                  id="contact-message"
                   rows={5}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
                   placeholder="How can we help?"
                   className="input-base resize-none"
                 />
+                <FieldError message={errors.message} />
               </div>
-              <button type="submit" className="btn-primary w-full sm:w-auto">
-                Send Message
+              {/* Honeypot for bots — hidden from people and screen readers. */}
+              <input
+                type="text"
+                name="website"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                tabIndex={-1}
+                autoComplete="off"
+                aria-hidden="true"
+                className="hidden"
+              />
+              <button
+                type="submit"
+                disabled={submitting}
+                className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
+              >
+                {submitting && <Loader2 size={16} className="animate-spin" />}
+                {submitting ? "Sending..." : "Send Message"}
               </button>
             </form>
+            )}
           </div>
         </Reveal>
 
@@ -153,6 +263,11 @@ export default function ContactPage() {
       </Container>
     </div>
   );
+}
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <p className="mt-1.5 text-xs font-medium text-danger">{message}</p>;
 }
 
 function ContactRow({

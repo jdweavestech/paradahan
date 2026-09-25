@@ -18,7 +18,6 @@ export const parkingSpots: ParkingSpot[] = [
     rating: 4.7,
     reviewCount: 328,
     vehicleTypes: ["Car", "Motorcycle", "Van/SUV"],
-    distanceKm: 0.8,
     amenities: ["CCTV", "Security Guard", "Well-lit", "EV Charging"],
   },
   {
@@ -38,7 +37,6 @@ export const parkingSpots: ParkingSpot[] = [
     rating: 4.4,
     reviewCount: 512,
     vehicleTypes: ["Car", "Motorcycle", "Van/SUV", "Truck"],
-    distanceKm: 2.3,
     amenities: ["CCTV", "Covered", "Elevator Access", "Wide Aisles"],
   },
   {
@@ -58,7 +56,6 @@ export const parkingSpots: ParkingSpot[] = [
     rating: 4.8,
     reviewCount: 741,
     vehicleTypes: ["Car", "Van/SUV"],
-    distanceKm: 3.1,
     amenities: ["CCTV", "Valet Available", "EV Charging", "Car Wash Nearby"],
   },
   {
@@ -78,7 +75,6 @@ export const parkingSpots: ParkingSpot[] = [
     rating: 4.3,
     reviewCount: 189,
     vehicleTypes: ["Car", "Motorcycle"],
-    distanceKm: 5.6,
     amenities: ["Security Guard", "Well-lit"],
   },
   {
@@ -98,7 +94,6 @@ export const parkingSpots: ParkingSpot[] = [
     rating: 4.6,
     reviewCount: 264,
     vehicleTypes: ["Car", "Motorcycle", "Van/SUV"],
-    distanceKm: 1.4,
     amenities: ["CCTV", "Covered", "Family Restroom Nearby"],
   },
   {
@@ -118,7 +113,6 @@ export const parkingSpots: ParkingSpot[] = [
     rating: 4.1,
     reviewCount: 903,
     vehicleTypes: ["Car", "Van/SUV", "Truck"],
-    distanceKm: 8.9,
     amenities: ["CCTV", "Security Guard", "Shuttle Service"],
   },
 ];
@@ -174,11 +168,4 @@ export const cities: CityInfo[] = [
   },
 ];
 
-export const popularSearches = [
-  "Malls",
-  "Hospitals",
-  "Universities",
-  "Airports",
-  "Hotels",
-  "Business Districts",
-];
+export const popularSearches = ["Makati", "Taguig", "Quezon City", "Cebu", "NAIA", "Malls"];

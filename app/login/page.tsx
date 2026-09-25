@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Eye, EyeOff, SquareParking, Loader2 } from "lucide-react";
 import Container from "@/components/shared/Container";
 import Reveal from "@/components/shared/Reveal";
+import { getSafeNextPath } from "@/lib/redirect";
 
 interface FieldErrors {
   email?: string;
@@ -39,7 +40,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/");
+      router.push(getSafeNextPath());
       router.refresh();
     } catch {
       setErrors({ form: "Network error. Please try again." });

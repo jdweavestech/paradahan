@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { Facebook, Instagram, Twitter, SquareParking, Send } from "lucide-react";
+import { Facebook, Instagram, Twitter, SquareParking } from "lucide-react";
 import Container from "../shared/Container";
+import NewsletterForm from "./NewsletterForm";
 
 const footerColumns = [
   {
@@ -27,8 +28,8 @@ const footerColumns = [
     links: [
       { label: "Contact Us", href: "/contact" },
       { label: "FAQ", href: "/contact#faq" },
-      { label: "Report an Issue", href: "/contact" },
-      { label: "Community Guidelines", href: "/about" },
+      { label: "Report an Issue", href: "/contact?subject=bug" },
+      { label: "Community Guidelines", href: "/terms#community-guidelines" },
     ],
   },
 ];
@@ -87,21 +88,7 @@ export default function Footer() {
           <p className="mt-4 text-sm text-white/50">
             Get updates on new cities and features.
           </p>
-          {/* <form className="mt-4 flex items-center gap-2" onSubmit={(e) => e.preventDefault()}> */}
-          <form className="mt-4 flex items-center gap-2">
-            <input
-              type="email"
-              placeholder="you@email.com"
-              className="w-full min-w-0 rounded-full border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-white placeholder:text-white/30 focus:border-primary focus:outline-none"
-            />
-            <button
-              type="submit"
-              aria-label="Subscribe"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-white transition-colors hover:bg-primary-hover"
-            >
-              <Send size={15} />
-            </button>
-          </form>
+          <NewsletterForm />
         </div>
       </Container>
 

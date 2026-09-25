@@ -29,7 +29,7 @@ export async function getCurrentUser() {
   const payload = verifySessionToken(token);
   if (!payload) return null;
 
-  const user = getUserById(payload.userId);
+  const user = await getUserById(payload.userId);
   if (!user) return null;
 
   return toPublicUser(user);

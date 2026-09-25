@@ -9,13 +9,18 @@ import { createHmac, timingSafeEqual } from "crypto";
  * if needed; the verify/sign call sites won't need to change shape.
  */
 
-const SECRET = process.env.SESSION_SECRET || "dev-only-insecure-secret-change-me";
+const DEV_SECRET = "dev-only-insecure-secret-change-me";
 
-if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
-  // eslint-disable-next-line no-console
-  console.warn(
-    "[auth] SESSION_SECRET is not set. Using an insecure default — set it in your environment before deploying."
-  );
+// Resolved lazily (not at import) so `next build` works without the env var;
+// a production server refuses to sign or verify anything without a real one,
+// since the dev default is public and would let anyone forge sessions.
+function getSecret(): string {
+  const secret = process.env.SESSION_SECRET;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("[auth] SESSION_SECRET is not set. Add it to your environment variables.");
+  }
+  return DEV_SECRET;
 }
 
 export interface SessionPayload {
@@ -40,7 +45,7 @@ function base64urlDecode(input: string): Buffer {
 }
 
 function sign(data: string): string {
-  return base64url(createHmac("sha256", SECRET).update(data).digest());
+  return base64url(createHmac("sha256", getSecret()).update(data).digest());
 }
 
 export function createSessionToken(

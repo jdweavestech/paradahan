@@ -1,52 +1,32 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import path from "path";
 import type { FavoriteRecord } from "@/lib/types";
+import { supabase, unwrap } from "./supabase";
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const DATA_FILE = path.join(DATA_DIR, "favorites.json");
+/** Favorites store, backed by the `favorites` table in Supabase. */
 
-function ensureStore() {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-  if (!existsSync(DATA_FILE)) writeFileSync(DATA_FILE, "[]", "utf8");
+export async function getFavoritesByUser(userId: string): Promise<FavoriteRecord[]> {
+  const rows = unwrap(
+    await supabase()
+      .from("favorites")
+      .select("user_id, spot_id, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false }),
+    "getFavoritesByUser"
+  );
+  return (rows ?? []).map((r) => ({ userId: r.user_id, spotId: r.spot_id, createdAt: r.created_at }));
 }
 
-function readAll(): FavoriteRecord[] {
-  ensureStore();
-  try {
-    const raw = readFileSync(DATA_FILE, "utf8");
-    return JSON.parse(raw) as FavoriteRecord[];
-  } catch {
-    return [];
-  }
+export async function addFavorite(userId: string, spotId: string): Promise<void> {
+  unwrap(
+    await supabase()
+      .from("favorites")
+      .upsert({ user_id: userId, spot_id: spotId }, { onConflict: "user_id,spot_id", ignoreDuplicates: true }),
+    "addFavorite"
+  );
 }
 
-function writeAll(favorites: FavoriteRecord[]) {
-  ensureStore();
-  writeFileSync(DATA_FILE, JSON.stringify(favorites, null, 2), "utf8");
-}
-
-export function getFavoritesByUser(userId: string): FavoriteRecord[] {
-  return readAll()
-    .filter((f) => f.userId === userId)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-}
-
-export function isFavorite(userId: string, spotId: string): boolean {
-  return readAll().some((f) => f.userId === userId && f.spotId === spotId);
-}
-
-export function addFavorite(userId: string, spotId: string): FavoriteRecord {
-  const favorites = readAll();
-  const existing = favorites.find((f) => f.userId === userId && f.spotId === spotId);
-  if (existing) return existing;
-
-  const record: FavoriteRecord = { userId, spotId, createdAt: new Date().toISOString() };
-  favorites.push(record);
-  writeAll(favorites);
-  return record;
-}
-
-export function removeFavorite(userId: string, spotId: string): void {
-  const favorites = readAll();
-  writeAll(favorites.filter((f) => !(f.userId === userId && f.spotId === spotId)));
+export async function removeFavorite(userId: string, spotId: string): Promise<void> {
+  unwrap(
+    await supabase().from("favorites").delete().eq("user_id", userId).eq("spot_id", spotId),
+    "removeFavorite"
+  );
 }

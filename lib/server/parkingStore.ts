@@ -1,99 +1,175 @@
-import { randomUUID } from "crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import path from "path";
 import type { ParkingSpot, ParkingSubmission, SubmissionStatus } from "@/lib/types";
 import { parkingSpots } from "@/lib/mock-data";
+import { PHOTO_BUCKET, photoPublicUrlPrefix, supabase, unwrap, unwrapOne } from "./supabase";
 
 /**
- * Lightweight JSON-file store for community-submitted parking spots.
- *
- * Same stand-in pattern as lib/server/db.ts: a drop-in shape that a real
- * database (Supabase/Postgres/etc.) could replace later without touching
- * the API routes. Not meant for concurrent production traffic (no file
- * locking) — see the README note on when to graduate off this.
+ * Community-submitted parking spots, backed by the `parking_submissions`
+ * table in Supabase. Curated seed spots still live in lib/mock-data.ts and
+ * are merged in at read time.
  */
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const DATA_FILE = path.join(DATA_DIR, "parking-submissions.json");
-
-function ensureStore() {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-  if (!existsSync(DATA_FILE)) writeFileSync(DATA_FILE, "[]", "utf8");
+interface SubmissionRow {
+  id: string;
+  submitted_by: string;
+  submitted_by_name: string;
+  status: SubmissionStatus;
+  created_at: string;
+  name: string;
+  address: string;
+  city: string;
+  lat: number;
+  lng: number;
+  description: string;
+  parking_type: string;
+  vehicle_types: string[];
+  amenities: string[];
+  opening_time: string;
+  closing_time: string;
+  is_open_24h: boolean;
+  rate: number | string | null;
+  rate_unit: "hour" | "entry" | "day";
+  photos: string[];
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  review_note: string | null;
 }
 
-function readAll(): ParkingSubmission[] {
-  ensureStore();
-  try {
-    const raw = readFileSync(DATA_FILE, "utf8");
-    return JSON.parse(raw) as ParkingSubmission[];
-  } catch {
-    return [];
-  }
-}
-
-function writeAll(submissions: ParkingSubmission[]) {
-  ensureStore();
-  writeFileSync(DATA_FILE, JSON.stringify(submissions, null, 2), "utf8");
-}
-
-export function createSubmission(
-  input: Omit<ParkingSubmission, "id" | "createdAt" | "status">
-): ParkingSubmission {
-  const submissions = readAll();
-  const submission: ParkingSubmission = {
-    ...input,
-    id: randomUUID(),
-    status: "pending",
-    createdAt: new Date().toISOString(),
+function fromRow(row: SubmissionRow): ParkingSubmission {
+  return {
+    id: row.id,
+    submittedBy: row.submitted_by,
+    submittedByName: row.submitted_by_name,
+    status: row.status,
+    createdAt: row.created_at,
+    name: row.name,
+    address: row.address,
+    city: row.city,
+    lat: row.lat,
+    lng: row.lng,
+    description: row.description,
+    parkingType: row.parking_type as ParkingSubmission["parkingType"],
+    vehicleTypes: row.vehicle_types as ParkingSubmission["vehicleTypes"],
+    amenities: row.amenities,
+    openingTime: row.opening_time,
+    closingTime: row.closing_time,
+    isOpen24h: row.is_open_24h,
+    // numeric columns come back as strings from PostgREST
+    rate: row.rate === null ? null : Number(row.rate),
+    rateUnit: row.rate_unit,
+    photos: row.photos ?? [],
+    reviewedAt: row.reviewed_at ?? undefined,
+    reviewedBy: row.reviewed_by ?? undefined,
+    reviewNote: row.review_note ?? undefined,
   };
-  submissions.push(submission);
-  writeAll(submissions);
-  return submission;
 }
 
-export function getSubmissionsByUser(userId: string): ParkingSubmission[] {
-  return readAll()
-    .filter((s) => s.submittedBy === userId)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function createSubmission(
+  input: Omit<ParkingSubmission, "id" | "createdAt" | "status">
+): Promise<ParkingSubmission> {
+  const row = unwrapOne(
+    await supabase()
+      .from("parking_submissions")
+      .insert({
+        submitted_by: input.submittedBy,
+        submitted_by_name: input.submittedByName,
+        name: input.name,
+        address: input.address,
+        city: input.city,
+        lat: input.lat,
+        lng: input.lng,
+        description: input.description,
+        parking_type: input.parkingType,
+        vehicle_types: input.vehicleTypes,
+        amenities: input.amenities,
+        opening_time: input.openingTime,
+        closing_time: input.closingTime,
+        is_open_24h: input.isOpen24h,
+        rate: input.rate,
+        rate_unit: input.rateUnit,
+        photos: input.photos,
+      })
+      .select("*")
+      .single<SubmissionRow>(),
+    "createSubmission"
+  );
+  return fromRow(row);
 }
 
-export function getAllSubmissions(status?: SubmissionStatus): ParkingSubmission[] {
-  const submissions = readAll();
-  const filtered = status ? submissions.filter((s) => s.status === status) : submissions;
-  return filtered.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+export async function getSubmissionsByUser(userId: string): Promise<ParkingSubmission[]> {
+  const rows = unwrap(
+    await supabase()
+      .from("parking_submissions")
+      .select("*")
+      .eq("submitted_by", userId)
+      .order("created_at", { ascending: false })
+      .returns<SubmissionRow[]>(),
+    "getSubmissionsByUser"
+  );
+  return (rows ?? []).map(fromRow);
 }
 
-export function getSubmissionById(id: string): ParkingSubmission | null {
-  return readAll().find((s) => s.id === id) ?? null;
+export async function getAllSubmissions(status?: SubmissionStatus): Promise<ParkingSubmission[]> {
+  let query = supabase().from("parking_submissions").select("*");
+  if (status) query = query.eq("status", status);
+  const rows = unwrap(
+    await query.order("created_at", { ascending: false }).returns<SubmissionRow[]>(),
+    "getAllSubmissions"
+  );
+  return (rows ?? []).map(fromRow);
+}
+
+export async function getSubmissionById(id: string): Promise<ParkingSubmission | null> {
+  if (!UUID_RE.test(id)) return null;
+  const row = unwrap(
+    await supabase().from("parking_submissions").select("*").eq("id", id).maybeSingle<SubmissionRow>(),
+    "getSubmissionById"
+  );
+  return row ? fromRow(row) : null;
 }
 
 /** Admin action: approve or reject a submission. */
-export function updateSubmissionStatus(
+export async function updateSubmissionStatus(
   id: string,
   status: SubmissionStatus,
   reviewedBy: string,
   reviewNote?: string
-): ParkingSubmission | null {
-  const submissions = readAll();
-  const submission = submissions.find((s) => s.id === id);
-  if (!submission) return null;
-
-  submission.status = status;
-  submission.reviewedAt = new Date().toISOString();
-  submission.reviewedBy = reviewedBy;
-  if (reviewNote !== undefined) submission.reviewNote = reviewNote;
-  else delete submission.reviewNote;
-
-  writeAll(submissions);
-  return submission;
+): Promise<ParkingSubmission | null> {
+  if (!UUID_RE.test(id)) return null;
+  const row = unwrap(
+    await supabase()
+      .from("parking_submissions")
+      .update({
+        status,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: reviewedBy,
+        review_note: reviewNote ?? null,
+      })
+      .eq("id", id)
+      .select("*")
+      .maybeSingle<SubmissionRow>(),
+    "updateSubmissionStatus"
+  );
+  return row ? fromRow(row) : null;
 }
 
-/** Admin action: permanently remove a submission (e.g. spam). */
-export function deleteSubmission(id: string): boolean {
-  const submissions = readAll();
-  const next = submissions.filter((s) => s.id !== id);
-  if (next.length === submissions.length) return false;
-  writeAll(next);
+/** Admin action: permanently remove a submission (e.g. spam), including its photos. */
+export async function deleteSubmission(id: string): Promise<boolean> {
+  const existing = await getSubmissionById(id);
+  if (!existing) return false;
+
+  unwrap(await supabase().from("parking_submissions").delete().eq("id", id), "deleteSubmission");
+
+  const prefix = photoPublicUrlPrefix();
+  const paths = existing.photos
+    .filter((url) => url.startsWith(prefix))
+    .map((url) => decodeURIComponent(url.slice(prefix.length)));
+  if (paths.length > 0) {
+    // Best effort — a leftover orphaned photo isn't worth failing the delete over.
+    const { error } = await supabase().storage.from(PHOTO_BUCKET).remove(paths);
+    if (error) console.warn(`[parkingStore] couldn't remove photos for ${id}: ${error.message}`);
+  }
   return true;
 }
 
@@ -119,6 +195,8 @@ export function submissionToParkingSpot(sub: ParkingSubmission): ParkingSpot {
     city: sub.city,
     address: sub.address,
     image: sub.photos[0] ?? DEFAULT_SPOT_IMAGE,
+    photos: sub.photos,
+    description: sub.description || undefined,
     lat: sub.lat,
     lng: sub.lng,
     priceFrom: sub.rate ?? 0,
@@ -138,8 +216,8 @@ export function submissionToParkingSpot(sub: ParkingSubmission): ParkingSpot {
 }
 
 /** All approved community submissions, converted to the public ParkingSpot shape. */
-export function getApprovedSpots(): ParkingSpot[] {
-  return getAllSubmissions("approved").map(submissionToParkingSpot);
+export async function getApprovedSpots(): Promise<ParkingSpot[]> {
+  return (await getAllSubmissions("approved")).map(submissionToParkingSpot);
 }
 
 /**
@@ -147,8 +225,9 @@ export function getApprovedSpots(): ParkingSpot[] {
  * approved community submissions — used by the reviews/reports routes to
  * validate a spotId before writing anything keyed to it.
  */
-export function getPublicSpotById(id: string): ParkingSpot | null {
+export async function getPublicSpotById(id: string): Promise<ParkingSpot | null> {
   const seedSpot = parkingSpots.find((s) => s.id === id);
   if (seedSpot) return seedSpot;
-  return getApprovedSpots().find((s) => s.id === id) ?? null;
+  const sub = await getSubmissionById(id);
+  return sub && sub.status === "approved" ? submissionToParkingSpot(sub) : null;
 }

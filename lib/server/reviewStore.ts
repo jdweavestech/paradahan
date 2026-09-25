@@ -1,45 +1,45 @@
-import { randomUUID } from "crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import path from "path";
 import type { Review, VehicleType } from "@/lib/types";
+import { supabase, unwrap, unwrapOne } from "./supabase";
 
-/**
- * Lightweight JSON-file store for spot reviews. Same stand-in pattern as
- * favoritesStore.ts / parkingStore.ts — a drop-in shape a real database
- * could replace later without touching the API routes.
- */
+/** Spot reviews, backed by the `reviews` table in Supabase. */
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const DATA_FILE = path.join(DATA_DIR, "reviews.json");
-
-function ensureStore() {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-  if (!existsSync(DATA_FILE)) writeFileSync(DATA_FILE, "[]", "utf8");
+interface ReviewRow {
+  id: string;
+  spot_id: string;
+  user_id: string;
+  author: string;
+  rating: number;
+  comment: string;
+  vehicle_type: VehicleType;
+  date: string;
+  created_at: string;
 }
 
-function readAll(): Review[] {
-  ensureStore();
-  try {
-    const raw = readFileSync(DATA_FILE, "utf8");
-    return JSON.parse(raw) as Review[];
-  } catch {
-    return [];
-  }
+function fromRow(row: ReviewRow): Review {
+  return {
+    id: row.id,
+    spotId: row.spot_id,
+    userId: row.user_id,
+    author: row.author,
+    rating: row.rating,
+    comment: row.comment,
+    vehicleType: row.vehicle_type,
+    date: row.date,
+    createdAt: row.created_at,
+  };
 }
 
-function writeAll(reviews: Review[]) {
-  ensureStore();
-  writeFileSync(DATA_FILE, JSON.stringify(reviews, null, 2), "utf8");
-}
-
-export function getReviewsBySpot(spotId: string): Review[] {
-  return readAll()
-    .filter((r) => r.spotId === spotId)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-}
-
-export function getUserReviewForSpot(spotId: string, userId: string): Review | null {
-  return readAll().find((r) => r.spotId === spotId && r.userId === userId) ?? null;
+export async function getReviewsBySpot(spotId: string): Promise<Review[]> {
+  const rows = unwrap(
+    await supabase()
+      .from("reviews")
+      .select("*")
+      .eq("spot_id", spotId)
+      .order("created_at", { ascending: false })
+      .returns<ReviewRow[]>(),
+    "getReviewsBySpot"
+  );
+  return (rows ?? []).map(fromRow);
 }
 
 export interface UpsertReviewInput {
@@ -56,30 +56,42 @@ export interface UpsertReviewInput {
  * that spot (one review per user per spot — resubmitting edits it in place
  * rather than piling up duplicates).
  */
-export function upsertReview(input: UpsertReviewInput): Review {
-  const reviews = readAll();
+export async function upsertReview(input: UpsertReviewInput): Promise<Review> {
   const now = new Date();
-  const existingIndex = reviews.findIndex(
-    (r) => r.spotId === input.spotId && r.userId === input.userId
+  const row = unwrapOne(
+    await supabase()
+      .from("reviews")
+      .upsert(
+        {
+          spot_id: input.spotId,
+          user_id: input.userId,
+          author: input.author,
+          rating: input.rating,
+          comment: input.comment,
+          vehicle_type: input.vehicleType,
+          date: now.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+          created_at: now.toISOString(),
+        },
+        { onConflict: "spot_id,user_id" }
+      )
+      .select("*")
+      .single<ReviewRow>(),
+    "upsertReview"
   );
+  return fromRow(row);
+}
 
-  const review: Review = {
-    id: existingIndex >= 0 ? reviews[existingIndex].id : randomUUID(),
-    spotId: input.spotId,
-    userId: input.userId,
-    author: input.author,
-    rating: input.rating,
-    comment: input.comment,
-    vehicleType: input.vehicleType,
-    date: now.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
-    createdAt: now.toISOString(),
-  };
-
-  if (existingIndex >= 0) reviews[existingIndex] = review;
-  else reviews.push(review);
-
-  writeAll(reviews);
-  return review;
+/** Review count and rating sum for every spot that has at least one review. */
+export async function getAllReviewStats(): Promise<Map<string, { count: number; total: number }>> {
+  const rows = unwrap(
+    await supabase().from("review_stats").select("spot_id, review_count, rating_total"),
+    "getAllReviewStats"
+  );
+  const stats = new Map<string, { count: number; total: number }>();
+  for (const r of rows ?? []) {
+    stats.set(r.spot_id, { count: r.review_count, total: r.rating_total });
+  }
+  return stats;
 }
 
 /**
@@ -89,18 +101,15 @@ export function upsertReview(input: UpsertReviewInput): Review {
  * move the number instead of being decorative. Community-submitted spots
  * start at 0/0, so for those this is just the real average.
  */
-export function getRatingSummary(
-  spotId: string,
+export function mergeRating(
   baseRating: number,
-  baseReviewCount: number
+  baseReviewCount: number,
+  real: { count: number; total: number } | undefined
 ): { rating: number; reviewCount: number } {
-  const spotReviews = getReviewsBySpot(spotId);
-  const totalCount = baseReviewCount + spotReviews.length;
+  const realCount = real?.count ?? 0;
+  const totalCount = baseReviewCount + realCount;
   if (totalCount === 0) return { rating: 0, reviewCount: 0 };
 
-  const baseTotal = baseRating * baseReviewCount;
-  const realTotal = spotReviews.reduce((sum, r) => sum + r.rating, 0);
-  const rating = (baseTotal + realTotal) / totalCount;
-
+  const rating = (baseRating * baseReviewCount + (real?.total ?? 0)) / totalCount;
   return { rating: Math.round(rating * 10) / 10, reviewCount: totalCount };
 }

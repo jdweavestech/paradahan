@@ -6,6 +6,7 @@ import { getPublicSpotById } from "@/lib/server/parkingStore";
 import type { ReportReason, ReportStatus } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
 
   const input = body as Record<string, unknown>;
   const spotId = typeof input.spotId === "string" ? input.spotId : "";
-  const spot = spotId ? getPublicSpotById(spotId) : null;
+  const spot = spotId ? await getPublicSpotById(spotId) : null;
   if (!spot) {
     return NextResponse.json(
       { errors: { form: "That parking spot couldn't be found." } },
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ errors }, { status: 400 });
   }
 
-  const report = createReport({
+  const report = await createReport({
     spotId,
     spotName: spot.name,
     reportedBy: user.id,
@@ -50,12 +51,12 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ report }, { status: 201 });
 }
 
-// Not yet wired to an admin UI (see README known limitations) — listed here
-// so a moderation view can read from it later without another route change.
+// Admin-only: backs the Reports tab of the /admin moderation panel.
 export async function GET(req: NextRequest) {
   const { response } = await requireAdmin();
   if (response) return response;
 
-  const status = req.nextUrl.searchParams.get("status") as ReportStatus | null;
-  return NextResponse.json({ reports: getAllReports(status ?? undefined) });
+  const param = req.nextUrl.searchParams.get("status");
+  const status: ReportStatus | undefined = param === "open" || param === "resolved" ? param : undefined;
+  return NextResponse.json({ reports: await getAllReports(status) });
 }

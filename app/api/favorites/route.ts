@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/server/session";
 import { addFavorite, getFavoritesByUser, removeFavorite } from "@/lib/server/favoritesStore";
+import { getPublicSpotById } from "@/lib/server/parkingStore";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
 
-  const favorites = getFavoritesByUser(user.id);
+  const favorites = await getFavoritesByUser(user.id);
   return NextResponse.json({ spotIds: favorites.map((f) => f.spotId) });
 }
 
@@ -28,7 +30,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "spotId is required." }, { status: 400 });
   }
 
-  addFavorite(user.id, spotId);
+  if (!(await getPublicSpotById(spotId))) {
+    return NextResponse.json({ error: "That parking spot couldn't be found." }, { status: 404 });
+  }
+
+  await addFavorite(user.id, spotId);
   return NextResponse.json({ saved: true }, { status: 201 });
 }
 
@@ -41,6 +47,6 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "spotId is required." }, { status: 400 });
   }
 
-  removeFavorite(user.id, spotId);
+  await removeFavorite(user.id, spotId);
   return NextResponse.json({ saved: false });
 }

@@ -1,23 +1,11 @@
-import { randomUUID } from "crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import path from "path";
 import { isAdminEmail } from "./admin";
+import { supabase, unwrap, unwrapOne } from "./supabase";
 
 /**
- * Lightweight JSON-file user store.
- *
- * This project doesn't have a database wired up yet, so this module is a
- * drop-in stand-in: the same shape (getUserByEmail / createUser / etc.)
- * that a Prisma/Postgres-backed lib/server/db.ts would expose. When a real
- * database is ready, swap the implementations in this file only — nothing
- * in the API routes needs to change.
- *
- * Not meant for concurrent production traffic (no file locking), but is
- * safe and simple for local dev / a single-instance deployment.
+ * User store, backed by the `users` table in Supabase (see
+ * supabase/schema.sql). Auth itself is still custom (scrypt hashes + signed
+ * session cookies); Supabase is just the storage.
  */
-
-const DATA_DIR = path.join(process.cwd(), "data");
-const DATA_FILE = path.join(DATA_DIR, "users.json");
 
 export interface UserRecord {
   id: string;
@@ -29,53 +17,68 @@ export interface UserRecord {
   resetTokenExpiresAt?: string; // ISO date
 }
 
-function ensureStore() {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-  if (!existsSync(DATA_FILE)) writeFileSync(DATA_FILE, "[]", "utf8");
+interface UserRow {
+  id: string;
+  full_name: string;
+  email: string;
+  password_hash: string;
+  created_at: string;
+  reset_token_hash: string | null;
+  reset_token_expires_at: string | null;
 }
 
-function readAll(): UserRecord[] {
-  ensureStore();
-  try {
-    const raw = readFileSync(DATA_FILE, "utf8");
-    return JSON.parse(raw) as UserRecord[];
-  } catch {
-    return [];
-  }
+function fromRow(row: UserRow): UserRecord {
+  return {
+    id: row.id,
+    fullName: row.full_name,
+    email: row.email,
+    passwordHash: row.password_hash,
+    createdAt: row.created_at,
+    resetTokenHash: row.reset_token_hash ?? undefined,
+    resetTokenExpiresAt: row.reset_token_expires_at ?? undefined,
+  };
 }
 
-function writeAll(users: UserRecord[]) {
-  ensureStore();
-  writeFileSync(DATA_FILE, JSON.stringify(users, null, 2), "utf8");
-}
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function getUserByEmail(email: string): UserRecord | null {
+export async function getUserByEmail(email: string): Promise<UserRecord | null> {
   const normalized = email.trim().toLowerCase();
-  const users = readAll();
-  return users.find((u) => u.email === normalized) ?? null;
+  const row = unwrap(
+    await supabase().from("users").select("*").eq("email", normalized).maybeSingle<UserRow>(),
+    "getUserByEmail"
+  );
+  return row ? fromRow(row) : null;
 }
 
-export function getUserById(id: string): UserRecord | null {
-  const users = readAll();
-  return users.find((u) => u.id === id) ?? null;
+export async function getUserById(id: string): Promise<UserRecord | null> {
+  // Old session cookies from the JSON store era can carry ids Postgres
+  // would reject as malformed uuids — treat those as "no such user".
+  if (!UUID_RE.test(id)) return null;
+  const row = unwrap(
+    await supabase().from("users").select("*").eq("id", id).maybeSingle<UserRow>(),
+    "getUserById"
+  );
+  return row ? fromRow(row) : null;
 }
 
-export function createUser(input: {
+export async function createUser(input: {
   fullName: string;
   email: string;
   passwordHash: string;
-}): UserRecord {
-  const users = readAll();
-  const user: UserRecord = {
-    id: randomUUID(),
-    fullName: input.fullName.trim(),
-    email: input.email.trim().toLowerCase(),
-    passwordHash: input.passwordHash,
-    createdAt: new Date().toISOString(),
-  };
-  users.push(user);
-  writeAll(users);
-  return user;
+}): Promise<UserRecord> {
+  const row = unwrapOne(
+    await supabase()
+      .from("users")
+      .insert({
+        full_name: input.fullName.trim(),
+        email: input.email.trim().toLowerCase(),
+        password_hash: input.passwordHash,
+      })
+      .select("*")
+      .single<UserRow>(),
+    "createUser"
+  );
+  return fromRow(row);
 }
 
 export function toPublicUser(user: UserRecord) {
@@ -88,47 +91,48 @@ export function toPublicUser(user: UserRecord) {
   };
 }
 
-export function setResetToken(userId: string, tokenHash: string, expiresAt: string): void {
-  const users = readAll();
-  const user = users.find((u) => u.id === userId);
-  if (!user) return;
-  user.resetTokenHash = tokenHash;
-  user.resetTokenExpiresAt = expiresAt;
-  writeAll(users);
+export async function setResetToken(userId: string, tokenHash: string, expiresAt: string): Promise<void> {
+  unwrap(
+    await supabase()
+      .from("users")
+      .update({ reset_token_hash: tokenHash, reset_token_expires_at: expiresAt })
+      .eq("id", userId),
+    "setResetToken"
+  );
 }
 
 /** Looks up a user by a reset token's hash, but only if it hasn't expired. */
-export function getUserByValidResetTokenHash(tokenHash: string): UserRecord | null {
-  const users = readAll();
-  const user = users.find((u) => u.resetTokenHash === tokenHash);
-  if (!user) return null;
-  if (!user.resetTokenExpiresAt || new Date(user.resetTokenExpiresAt).getTime() < Date.now()) {
-    return null;
-  }
-  return user;
+export async function getUserByValidResetTokenHash(tokenHash: string): Promise<UserRecord | null> {
+  const row = unwrap(
+    await supabase()
+      .from("users")
+      .select("*")
+      .eq("reset_token_hash", tokenHash)
+      .gt("reset_token_expires_at", new Date().toISOString())
+      .maybeSingle<UserRow>(),
+    "getUserByValidResetTokenHash"
+  );
+  return row ? fromRow(row) : null;
 }
 
-export function updateUserProfile(
+export async function updateUserProfile(
   userId: string,
   updates: { fullName?: string }
-): UserRecord | null {
-  const users = readAll();
-  const user = users.find((u) => u.id === userId);
-  if (!user) return null;
-  if (typeof updates.fullName === "string" && updates.fullName.trim()) {
-    user.fullName = updates.fullName.trim();
-  }
-  writeAll(users);
-  return user;
+): Promise<void> {
+  if (typeof updates.fullName !== "string" || !updates.fullName.trim()) return;
+  unwrap(
+    await supabase().from("users").update({ full_name: updates.fullName.trim() }).eq("id", userId),
+    "updateUserProfile"
+  );
 }
 
-export function updateUserPassword(userId: string, passwordHash: string): void {
-  const users = readAll();
-  const user = users.find((u) => u.id === userId);
-  if (!user) return;
-  user.passwordHash = passwordHash;
+export async function updateUserPassword(userId: string, passwordHash: string): Promise<void> {
   // A successful reset invalidates the token so it can't be reused.
-  delete user.resetTokenHash;
-  delete user.resetTokenExpiresAt;
-  writeAll(users);
+  unwrap(
+    await supabase()
+      .from("users")
+      .update({ password_hash: passwordHash, reset_token_hash: null, reset_token_expires_at: null })
+      .eq("id", userId),
+    "updateUserPassword"
+  );
 }

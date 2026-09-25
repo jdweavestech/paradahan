@@ -10,6 +10,7 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
+  ExternalLink,
 } from "lucide-react";
 import type { ParkingSubmission, SubmissionStatus } from "@/lib/types";
 
@@ -113,8 +114,33 @@ export default function SubmissionCard({
             on {new Date(submission.createdAt).toLocaleDateString()}
           </p>
 
+          <p className="mt-1 text-xs text-muted">
+            {submission.city} ·{" "}
+            {submission.isOpen24h ? "24 hours" : `${submission.openingTime}–${submission.closingTime}`} ·{" "}
+            {submission.rate !== null ? `₱${submission.rate}/${submission.rateUnit}` : "No rate given"} ·{" "}
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${submission.lat},${submission.lng}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-0.5 font-semibold text-primary hover:underline"
+            >
+              Check pin <ExternalLink size={11} />
+            </a>
+          </p>
+
           {submission.description && (
-            <p className="mt-2 line-clamp-2 text-sm text-ink/70">{submission.description}</p>
+            <p className="mt-2 line-clamp-3 text-sm text-ink/70">{submission.description}</p>
+          )}
+
+          {submission.photos.length > 1 && (
+            <div className="mt-3 flex gap-2">
+              {submission.photos.slice(1).map((src) => (
+                <a key={src} href={src} target="_blank" rel="noopener noreferrer">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={src} alt="" className="h-14 w-14 rounded-lg object-cover" />
+                </a>
+              ))}
+            </div>
           )}
 
           {(submission.vehicleTypes.length > 0 || submission.amenities.length > 0) && (
