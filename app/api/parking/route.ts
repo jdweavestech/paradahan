@@ -4,6 +4,7 @@ import { validateParkingSubmission } from "@/lib/server/validation";
 import { createSubmission, getApprovedSpots, getSubmissionsByUser } from "@/lib/server/parkingStore";
 import { getAllReviewStats, mergeRating } from "@/lib/server/reviewStore";
 import { photoPublicUrlPrefix } from "@/lib/server/supabase";
+import { notifyAdmins } from "@/lib/server/email";
 import { parkingSpots } from "@/lib/mock-data";
 import type { VehicleType, ParkingType } from "@/lib/types";
 
@@ -85,6 +86,16 @@ export async function POST(req: NextRequest) {
     photos,
   });
 
+  await notifyAdmins({
+    subject: `New parking spot to review: ${submission.name}`,
+    lines: [
+      `${user.fullName} submitted "${submission.name}" in ${submission.city}.`,
+      "It stays hidden from the public until you approve it.",
+    ],
+    section: "submissions",
+    origin: req.nextUrl.origin,
+  });
+
   return NextResponse.json({ submission }, { status: 201 });
 }
 
@@ -102,7 +113,16 @@ export async function GET(req: NextRequest) {
   // recomputed here to fold in real submitted reviews on top of the
   // curated set's baked-in seed numbers (community spots start at 0/0,
   // so for those it's just the real average).
-  const [approved, stats] = await Promise.all([getApprovedSpots(), getAllReviewStats()]);
+  //
+  // If the database is unreachable (e.g. a paused Supabase project), still
+  // serve the curated set so the site isn't blank.
+  let approved: Awaited<ReturnType<typeof getApprovedSpots>> = [];
+  let stats: Awaited<ReturnType<typeof getAllReviewStats>> = new Map();
+  try {
+    [approved, stats] = await Promise.all([getApprovedSpots(), getAllReviewStats()]);
+  } catch (err) {
+    console.error("[parking] database unavailable, serving curated spots only:", err);
+  }
   const spots = [...parkingSpots, ...approved].map((spot) => ({
     ...spot,
     ...mergeRating(spot.rating, spot.reviewCount, stats.get(spot.id)),

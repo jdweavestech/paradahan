@@ -3,6 +3,7 @@ import { getCurrentUser, requireAdmin } from "@/lib/server/session";
 import { validateReport } from "@/lib/server/validation";
 import { createReport, getAllReports } from "@/lib/server/reportStore";
 import { getPublicSpotById } from "@/lib/server/parkingStore";
+import { notifyAdmins } from "@/lib/server/email";
 import type { ReportReason, ReportStatus } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -46,6 +47,13 @@ export async function POST(req: NextRequest) {
     reportedByName: user.fullName,
     reason: input.reason as ReportReason,
     details: typeof input.details === "string" ? input.details.trim() : "",
+  });
+
+  await notifyAdmins({
+    subject: `Listing reported: ${spot.name}`,
+    lines: [`${user.fullName} reported "${spot.name}": ${report.reason}.`, ...(report.details ? [report.details] : [])],
+    section: "reports",
+    origin: req.nextUrl.origin,
   });
 
   return NextResponse.json({ report }, { status: 201 });

@@ -84,6 +84,9 @@ export default function MyContributions() {
               <p className="mt-2 text-xs text-muted">
                 Submitted {new Date(sub.createdAt).toLocaleDateString()}
               </p>
+              {sub.status === "rejected" && sub.reviewNote && (
+                <p className="mt-2 text-xs text-ink/80">Moderator note: {sub.reviewNote}</p>
+              )}
             </div>
           </div>
         );

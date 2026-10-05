@@ -11,11 +11,24 @@ export const PHOTO_BUCKET = "spot-photos";
 
 let client: SupabaseClient | null = null;
 
+/**
+ * The project URL, reduced to its origin — tolerates a pasted
+ * "https://ref.supabase.co/rest/v1/" or a trailing slash.
+ */
+function projectUrl(): string {
+  const raw = (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return "";
+  }
+}
+
 export function supabase(): SupabaseClient {
   if (client) return client;
 
-  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = projectUrl();
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
   if (!url || !key) {
     throw new Error(
       "Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (see .env.example)."

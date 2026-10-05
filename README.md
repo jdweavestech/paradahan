@@ -12,40 +12,95 @@ Community-driven parking finder for the Philippines.
 - **Vercel** — hosting
 - Auth: Next.js Route Handlers + Node's built-in `crypto` (scrypt password
   hashing, HMAC-signed session cookies). Users live in Supabase.
-- Email: Resend (password-reset emails), optional in local dev
+- Email: Gmail SMTP (nodemailer) or Resend, optional in local dev
 
-## Getting started (local)
+## Setup walkthrough
 
-1. **Create a Supabase project** at https://supabase.com.
-2. **Create the tables and photo bucket:** Supabase dashboard → SQL Editor →
-   New query → paste all of `supabase/schema.sql` → Run. (Safe to re-run.)
-3. **Configure env vars:**
-   ```bash
-   cp .env.example .env
-   ```
-   Fill in `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (Project Settings →
-   API), a random `SESSION_SECRET`, and your email in `ADMIN_EMAILS`.
-4. **Run it:**
-   ```bash
-   npm install
-   npm run dev
-   ```
-5. *(Optional)* Import accounts/reviews from the old JSON store in `data/`:
-   ```bash
-   node --env-file=.env scripts/migrate-json-to-supabase.mjs
-   ```
+Everything here is on a free tier: Supabase (database + photo storage),
+Vercel (hosting), Gmail or Resend (email), OpenStreetMap (maps, no key).
 
-## Deploying to Vercel
+### 1. Supabase
 
-1. Push the repo to GitHub and import it at https://vercel.com/new
-   (framework preset: Next.js — no extra config needed).
-2. Under **Settings → Environment Variables**, add everything from
-   `.env.example`: `SESSION_SECRET` (required — the app refuses to sign
-   sessions without it in production), `ADMIN_EMAILS`, `SUPABASE_URL`,
-   `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`, and `APP_URL`
-   (your production URL).
-3. Deploy. Nothing is written to the local filesystem, so it runs fine on
-   Vercel's read-only serverless functions.
+1. Create a project at https://supabase.com (region: Singapore is closest to
+   the Philippines).
+2. **SQL Editor → New query** → paste all of `supabase/schema.sql` → **Run**.
+   This creates the tables and the `spot-photos` bucket. Safe to re-run.
+3. **Project Settings → API**: copy the **Project URL** and the
+   **service_role** (secret) key.
+
+Free projects pause after about a week with no traffic. If the site suddenly
+can't load data, open the Supabase dashboard and click **Restore project**.
+
+### 2. Environment variables
+
+```bash
+cp .env.example .env
+```
+
+| Variable | What to put |
+| --- | --- |
+| `SESSION_SECRET` | Any long random string (command is in `.env.example`) |
+| `ADMIN_EMAILS` | Email(s) allowed into `/admin`, comma-separated |
+| `SUPABASE_URL` | `https://<project-ref>.supabase.co` — nothing after `.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | The service_role key (never the anon key) |
+| `SMTP_USER` / `SMTP_PASS` | *Optional.* Gmail address + app password |
+| `RESEND_API_KEY` / `EMAIL_FROM` | *Optional.* Alternative to Gmail |
+| `APP_URL` | *Optional.* Production URL, used in emailed links |
+
+### 3. Run it
+
+```bash
+npm install
+npm run check   # verifies .env, the Supabase tables, the bucket and admins
+npm run dev
+```
+
+`npm run check` tells you exactly what's missing and how to fix it; it never
+prints secret values. Open http://localhost:3000.
+
+*(Optional)* import accounts/reviews from the old JSON store in `data/`:
+`node --env-file=.env scripts/migrate-json-to-supabase.mjs`
+
+### 4. Deploy to Vercel
+
+1. Push to GitHub, import the repo at https://vercel.com/new (preset:
+   Next.js, no extra config).
+2. **Settings → Environment Variables**: add the same keys as your `.env`,
+   plus `APP_URL` set to your production URL.
+3. Deploy. After changing any variable, redeploy for it to take effect.
+
+## Managing admins
+
+There is no separate admin login — an admin is a normal account whose email
+is listed in `ADMIN_EMAILS`.
+
+- **Become an admin:** put your email in `ADMIN_EMAILS`, restart the dev
+  server (or redeploy on Vercel), then sign up at `/signup` with that exact
+  email. If you were already logged in, just refresh.
+- **Add another admin:** add their email, comma-separated
+  (`ADMIN_EMAILS=me@gmail.com,friend@gmail.com`), and restart/redeploy. They
+  sign up like anyone else.
+- **Remove an admin:** delete their email from the list and restart/redeploy.
+  Their account keeps working as a regular user.
+- **Open the panel:** user menu (top right) → **Moderation**, or go to
+  `/admin`. Non-admins see "Not authorized".
+
+What the panel does:
+
+| Tab | Use it to |
+| --- | --- |
+| **Submissions** | Approve, reject (with an optional note the submitter sees under Account → Contributions) or delete community spots. Only approved spots are public. |
+| **Reports** | See listings users flagged, open the listing, mark resolved or reopen. |
+| **Messages** | Read contact-form messages, reply by email, mark handled. |
+
+With email configured, every admin gets a notice when a new submission,
+report or contact message arrives.
+
+Things done directly in Supabase (**Table Editor**), since there's no UI for
+them: delete a user (`users` — their submissions, reviews and favorites go
+with them), remove an abusive review (`reviews`), export newsletter
+sign-ups (`newsletter_subscribers`). The curated seed spots and cities are
+edited in `lib/mock-data.ts`.
 
 **Security model:** every table has Row Level Security on with *no* policies,
 so the public anon key can't touch anything. All reads/writes go through the
@@ -85,8 +140,8 @@ signed in.
 
 - `POST /api/auth/forgot-password` — `{ email }`. Always returns the same
   generic message whether or not the email is registered (so the endpoint
-  can't be used to enumerate accounts), and emails the link via Resend. In
-  local dev without `RESEND_API_KEY`, the link is also returned and shown
+  can't be used to enumerate accounts), and emails the link. In local dev
+  without an email provider, the link is also returned and shown
   in a "dev mode" box; in production it is never returned.
 - `POST /api/auth/reset-password` — `{ token, password }`. Tokens are
   single-use, expire after 1 hour, and only their SHA-256 hash is ever

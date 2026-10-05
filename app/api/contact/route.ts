@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/server/session";
 import { validateContactMessage } from "@/lib/server/validation";
 import { createContactMessage } from "@/lib/server/contactStore";
+import { notifyAdmins } from "@/lib/server/email";
 import type { ContactSubject } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -28,12 +29,19 @@ export async function POST(req: NextRequest) {
   }
 
   const user = await getCurrentUser();
-  await createContactMessage({
+  const saved = await createContactMessage({
     fullName: String(input.fullName).trim(),
     email: String(input.email).trim().toLowerCase(),
     subject: input.subject as ContactSubject,
     message: String(input.message).trim(),
     userId: user?.id,
+  });
+
+  await notifyAdmins({
+    subject: `New contact message: ${saved.subject}`,
+    lines: [`From ${saved.fullName} <${saved.email}>`, saved.message],
+    section: "messages",
+    origin: req.nextUrl.origin,
   });
 
   return NextResponse.json({ ok: true }, { status: 201 });

@@ -12,6 +12,12 @@
 .env
 .env*.local
 
+# typescript
+*.tsbuildinfo
+
+# local Claude Code preview config
+/.claude/
+
 # misc
 .DS_Store
 *.pem
